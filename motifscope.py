@@ -963,7 +963,7 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
 
 parser = argparse.ArgumentParser(description='MotifScope')
-parser.add_argument('--analysis_type', dest = 'analysis_type',
+parser.add_argument('--sequence-type', dest = 'sequence_type',
                     help='type of input sequences [assembly / reads].', type = str,
                     required=True)
 
@@ -1000,7 +1000,7 @@ sys.getrecursionlimit()
 args = parser.parse_args()
 
 title = args.title
-analysis_type = args.analysis_type
+sequence_type = args.sequence_type
 input_fasta_to_count = args.input_fasta_to_count
 max_kmer_size = args.max_kmer_size
 min_kmer_size = args.min_kmer_size
@@ -1049,7 +1049,7 @@ alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
 dimension_reduction_result = run_umap(alignment_score_matrix)
 
 
-if analysis_type == "assembly":
+if sequence_type == "assembly":
     population = args.population
     population_metadata = pd.read_csv(population, sep = "\t")
     if run_msa == "True":
@@ -1060,7 +1060,7 @@ if analysis_type == "assembly":
         df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
         plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + ".png"), title, population_metadata)
 
-elif analysis_type == "reads":
+elif sequence_type == "reads":
     if run_msa == "True":
         msa = msa_with_characters(input_fasta_to_count, random_num)
         msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
