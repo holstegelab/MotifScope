@@ -963,30 +963,30 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
 
 parser = argparse.ArgumentParser(description='MotifScope')
-parser.add_argument('--sequence-type', dest = 'sequence_type',
+parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads]",
                     help='type of input sequences [assembly / reads].', type = str,
                     required=True)
 
 parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count',
-                    metavar="aligned_None_None_None_rfc1.centenarian.blood.hpc.one.line_1014_4129_one_line.fa", type=str,
+                    metavar="input.fa", type=str,
                     help='input fasta file to count')
 
 parser.add_argument('-mink', '--min_kmer', default = None, dest='min_kmer_size',
-                    metavar=5, type=int,
+                    metavar=2, type=int,
                     help='minimum k to count')
 
 parser.add_argument('-maxk', '--max_kmer', default = None, dest='max_kmer_size',
-                    metavar=5, type=int,
+                    metavar=10, type=int,
                     help='maximum k to count')
 
 parser.add_argument('-t', '--title', default = None, dest='title',
-                    metavar="RFC11", type=str,
+                    metavar="title", type=str,
                     help='title of the plot')
 
-parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, 
+parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, metavar = "False",
                     help = 'Boolean (True/False).', default = 'False')
 
-parser.add_argument('-m', '--m', dest = 'motif_guided', type = str, 
+parser.add_argument('-m', '--m', dest = 'motif_guided', type = str, metavar = "False",
                     help = 'Boolean (True/False).', default = 'False')
 
 parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
@@ -1051,7 +1051,8 @@ dimension_reduction_result = run_umap(alignment_score_matrix)
 
 if sequence_type == "assembly":
     population = args.population
-    population_metadata = pd.read_csv(population, sep = "\t")
+    population_metadata = pd.read_csv(population, sep = "\t", header = None)
+    population_metadata.columns = ["Sample", "Group"]
     if run_msa == "True":
         msa = msa_with_characters(input_fasta_to_count, random_num)
         msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
