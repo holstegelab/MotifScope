@@ -3,13 +3,11 @@ import numpy as np
 import os
 import argparse
 import sys
-import pandas as pd
 from Bio import SeqIO, pairwise2
-#from Bio.Seq import Seq
+from Bio.Seq import Seq
 from multiprocess import Pool
-from itertools import repeat
+from itertools import repeat, combinations_with_replacement, groupby
 import math
-from itertools import combinations_with_replacement
 import umap
 import copy
 import seaborn as sns
@@ -20,10 +18,9 @@ from random import random
 import scipy.cluster.hierarchy as shc
 import Levenshtein
 import binascii
-import logging
+#import logging
 from suffix_tree import Tree
 #import matplotlib.gridspec as gridspec
-from itertools import groupby
 
 
 class Kmer:
@@ -121,7 +118,7 @@ def count_kmer_per_seq(record, seq_identifier, fasta_file, k_min, k_max):
     if str(record) != "":
         seq_length = max([len(x) for x in record.split("x")])
         k_max = min([k_max, seq_length])
-        tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_") + ".fa"
+        tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_").replace("/", "_") + ".fa"
         with open (tmp_file, 'w') as tmp_fasta:
             tmp_fasta.write(">" + seq_identifier + "\n")
             tmp_fasta.write(record + "\n")
@@ -364,10 +361,10 @@ def mask_all_seq(input_fasta, min_k, max_k):
                             sum_max_perm_kmer_region[kmer_region[1]] = selected_kmer.max_kmer_mask[kmer_region]
                     kmer = sorted(sum_max_perm_kmer_region, key = sum_max_perm_kmer_region.get, reverse = True)[0]
                 else:
-                    logging.debug("getting best perm kmer")
+                    #logging.debug("getting best perm kmer")
                     kmer = get_best_perm_kmer(selected_kmer, selected_kmer_list)
-                    logging.debug("best kmer selected")
-                logging.debug(kmer)
+                    #logging.debug("best kmer selected")
+                #logging.debug(kmer)
                 print(kmer)
                 selected_kmer_list += [kmer]
                 one_kmer_masked = {}
@@ -447,10 +444,10 @@ def mask_all_seq_ref_motif(input_fasta, min_k, max_k, ref_motifs_list):
                     if selected_kmer.kmer in ref_motifs_dict_r:
                         kmer = ref_motifs_dict_r[selected_kmer.kmer]
                     else:
-                        logging.debug("getting best perm kmer")
+                        #logging.debug("getting best perm kmer")
                         kmer = get_best_perm_kmer(selected_kmer, selected_kmer_list)
-                        logging.debug("best kmer selected")
-                logging.debug(kmer)
+                        #logging.debug("best kmer selected")
+                #logging.debug(kmer)
                 print(kmer)
                 selected_kmer_list += [kmer]
                 one_kmer_masked = {}
@@ -522,7 +519,7 @@ def assign_chr_to_motif(all_unique_motif, printable_asii, input_fasta_file_name)
     else:
         printable_asii_to_include = printable_asii[:len(all_unique_motif)]
         motif_dict = dict(zip(all_unique_motif, printable_asii_to_include))
-        pd.DataFrame(motif_dict.items(), columns=['motif', 'ascii']).to_csv(input_fasta_file_name.replace(".fa", "_motif_to_ascii.txt"), sep = "\t", index = False)
+        #pd.DataFrame(motif_dict.items(), columns=['motif', 'ascii']).to_csv(input_fasta_file_name.replace(".fa", "_motif_to_ascii.txt"), sep = "\t", index = False)
         return motif_dict
 
 
@@ -823,7 +820,8 @@ def msa_with_characters(input_fasta_file_name, random_num):
     os.system("mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
     os.system("/project/holstegelab/Share/yaran/bin/libexec/mafft/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
     msa_result = list(SeqIO.parse(chr_fasta_file.replace(".hex", "_mafft_output.hex"), "fasta"))
-    
+    os.system("rm %s" %(chr_fasta_file.replace(".hex", ".ASCII")))
+    os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
     return msa_result
 
 def prepare_for_plotting(msa_result, motif_dict, dm):
