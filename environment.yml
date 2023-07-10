@@ -1,4 +1,4 @@
-name: null
+name: motifscope
 channels:
   - conda-forge
   - bioconda
