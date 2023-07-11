@@ -118,13 +118,13 @@ def count_kmer_per_seq(record, seq_identifier, fasta_file, k_min, k_max):
     if str(record) != "":
         seq_length = max([len(x) for x in record.split("x")])
         k_max = min([k_max, seq_length])
-        tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_").replace("/", "_") + ".fa"
+        tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_").replace("/", "_").replace(";", "_") + ".fa"
         with open (tmp_file, 'w') as tmp_fasta:
             tmp_fasta.write(">" + seq_identifier + "\n")
             tmp_fasta.write(record + "\n")
            
         output_cnt_file = tmp_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
-        os.system("/project/holstegelab/Share/yaran/bin/aardvark/build/aardvark kc -k %d -m %d %s > %s " %(min(len(record) - 1, k_min), min(len(record), k_max), tmp_file, output_cnt_file))
+        os.system("/project/holstegelab/Share/yaran/bin/aardvark/build/aardvark kc -k %d -m %d %s > %s " %(min(len(record) - 1, k_min), min(len(record), k_max)+1, tmp_file, output_cnt_file))
         df = pd.read_csv(output_cnt_file, header = None, sep = "\t")
         df.columns = ["kmer", "count"]
         df["ckmer"] = df.apply(lambda x: min([x["kmer"][i:] + x["kmer"][:i] for i in range(len( x["kmer"]))]), axis = 1)
@@ -339,7 +339,8 @@ def mask_all_seq(input_fasta, min_k, max_k):
     all_seq_masked_dict = {}
     output_fasta = input_fasta.replace(".fa", ".tmp.fa")
     os.system("cp %s %s" %(input_fasta, output_fasta))
-    while max([len(x) for x in seq_list]) != 1:
+    #while max([len(x) for x in seq_list]) != 1:
+    while max([len(x) for x in seq_list]) >= min_k:
         print("counting kmer")
         all_seq_dict = parse_fasta(output_fasta)
         kmer_counts = count_all_kmers_multi(all_seq_dict, output_fasta, min_k, max_k)
@@ -416,7 +417,8 @@ def mask_all_seq_ref_motif(input_fasta, min_k, max_k, ref_motifs_list):
     all_seq_masked_dict = {}
     output_fasta = input_fasta.replace(".fa", ".tmp.fa")
     os.system("cp %s %s" %(input_fasta, output_fasta))
-    while max([len(x) for x in seq_list]) != 1:
+    #while max([len(x) for x in seq_list]) != 1:
+    while max([len(x) for x in seq_list]) >= min_k:
         print("counting kmer")
         all_seq_dict = parse_fasta(output_fasta)
         kmer_counts = count_all_kmers_multi(all_seq_dict, output_fasta, min_k, max_k)
@@ -477,12 +479,12 @@ def mask_all_seq_ref_motif(input_fasta, min_k, max_k, ref_motifs_list):
     print("finding unconsecutive motifs")
     sporadic_motifs = {}
     all_seq_masked_sporadic_seq = {}
-    for seq_number in list(range(len(seq_to_be_masked))):
-        sporadic_motifs[seq_number] = find_sporadic(seq_to_be_masked[seq_number], selected_kmer_list)
+    for seq in seq_to_be_masked:
+        sporadic_motifs[seq] = find_sporadic(seq_to_be_masked[seq], selected_kmer_list)
 
-        seq_to_be_masked[seq_number], masked_region = sporadic_mask_seq_new(seq_to_be_masked[seq_number], seq_number, sporadic_motifs[seq_number])
+        seq_to_be_masked[seq], masked_region = sporadic_mask_seq_new(seq_to_be_masked[seq], seq, sporadic_motifs[seq])
         all_seq_masked_sporadic_seq = {**all_seq_masked_sporadic_seq, **masked_region}
-    
+
     return all_seq_masked_dict, all_seq_masked_sporadic_seq
 
 def tag_all_seq(all_seq, all_seq_masked_dict, all_seq_masked_sporadic_seq):
