@@ -3,6 +3,7 @@ import numpy as np
 import os
 import argparse
 import sys
+import shutil
 from Bio import SeqIO, pairwise2
 from Bio.Seq import Seq
 from multiprocess import Pool
@@ -818,9 +819,9 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
 
 def msa_with_characters(input_fasta_file_name, random_num):
     chr_fasta_file = input_fasta_file_name.replace(".fa", "_motif_in_hex_" + str(random_num) + ".hex")
-    os.system("/project/holstegelab/Share/yaran/bin/libexec/mafft/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
-    os.system("mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
-    os.system("/project/holstegelab/Share/yaran/bin/libexec/mafft/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
+    os.system(f"{args.mafft_path}/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
+    os.system(f"mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
+    os.system(f"{args.mafft_path}/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
     msa_result = list(SeqIO.parse(chr_fasta_file.replace(".hex", "_mafft_output.hex"), "fasta"))
     os.system("rm %s" %(chr_fasta_file.replace(".hex", ".ASCII")))
     os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
@@ -1002,12 +1003,21 @@ parser.add_argument('-a','--aardvark_path', default = 'aardvark', dest='aardvark
                     metavar="aardvark", type=str,
                     help='path to aardvark')
 
+parser.add_argument('-ma', '--mafft_path', default = 'mafft', dest='mafft_path',
+                    metavar="mafft", type=str,
+                    help='path to mafft')
+
 sys.getrecursionlimit()
 args = parser.parse_args()
 
-if not os.path.exists(args.aardvark_path):
+if shutil.which(args.aardvark_path) is None:
     print(f"Aardvark not found at the specified path '{args.aardvark_path}'. Please provide the correct path to aardvark.")
     sys.exit(1)
+
+if args.run_msa:
+    if not os.path.exists(os.path.join(args.mafft_path, 'hex2maffttext')):
+        print(f"Mafft binary hex2maffttext not found within the specified folder '{args.mafft_path}'. Please provide the correct path to mafft binaries.")
+        sys.exit(1)
 
 title = args.title
 sequence_type = args.sequence_type

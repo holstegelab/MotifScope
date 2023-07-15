@@ -18,6 +18,8 @@ A tool for motif annotation and visualization in tandem repeats.
 - Install aardvark (https://github.com/holstegelab/aardvark)
   and make the executable available in the path (or set the path with --aardvark_path)
 
+- Download Mafft  (https://gitlab.com/sysimm/mafft/-/tags)
+  and set the path to the binaries folder with --mafft_path. 
 
 ### Usage
 - For running MotifScope on a set of sequences (reads or assemblies) without population data:
