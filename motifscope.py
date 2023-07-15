@@ -102,7 +102,7 @@ def parse_fasta(filename):
 def count_kmer(all_seq, fasta_file, k_min, k_max):
     shorted_len = min(len(value) for value in all_seq.values())
     output_cnt_file = fasta_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
-    os.system("/project/holstegelab/Share/yaran/bin/aardvark/build/aardvark kc -k %d -m %d %s > %s " %(min(shorted_len - 1, k_min), min(shorted_len, k_max), fasta_file, output_cnt_file))
+    os.system(f"{args.aardvark_path} kc -k %d -m %d %s > %s " %(min(shorted_len - 1, k_min), min(shorted_len, k_max), fasta_file, output_cnt_file))
     df = pd.read_csv(output_cnt_file, sep='\t', header=None)
     os.system("rm %s" % (output_cnt_file))
     count_dict = dict(zip(df[0], df[1]))
@@ -124,7 +124,7 @@ def count_kmer_per_seq(record, seq_identifier, fasta_file, k_min, k_max):
             tmp_fasta.write(record + "\n")
            
         output_cnt_file = tmp_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
-        os.system("/project/holstegelab/Share/yaran/bin/aardvark/build/aardvark kc -k %d -m %d %s > %s " %(min(len(record) - 1, k_min), min(len(record), k_max)+1, tmp_file, output_cnt_file))
+        os.system(f"{args.aardvark_path} kc -k %d -m %d %s > %s "  %(min(len(record) - 1, k_min), min(len(record), k_max)+1, tmp_file, output_cnt_file))
         df = pd.read_csv(output_cnt_file, header = None, sep = "\t")
         df.columns = ["kmer", "count"]
         df["ckmer"] = df.apply(lambda x: min([x["kmer"][i:] + x["kmer"][:i] for i in range(len( x["kmer"]))]), axis = 1)
@@ -998,8 +998,16 @@ parser.add_argument('-p', '--population', default = None, dest='population',
                     metavar="metadata.txt", type=str,
                     help='population metadata file')
 
+parser.add_argument('-a','--aardvark_path', default = 'aardvark', dest='aardvark_path',
+                    metavar="aardvark", type=str,
+                    help='path to aardvark')
+
 sys.getrecursionlimit()
 args = parser.parse_args()
+
+if not os.path.exists(args.aardvark_path):
+    print(f"Aardvark not found at the specified path '{args.aardvark_path}'. Please provide the correct path to aardvark.")
+    sys.exit(1)
 
 title = args.title
 sequence_type = args.sequence_type
@@ -1018,56 +1026,58 @@ random_num = str(random()).replace('.', '')
 all_seq = list(SeqIO.parse(input_fasta_to_count, "fasta"))
 all_seq_dict = parse_fasta(input_fasta_to_count)
 
-pool = Pool()
+with Pool() as pool:
 
-if motif_guided == "False":
-    all_seq_masked, all_seq_masked_sporadic = mask_all_seq(input_fasta_to_count, min_kmer_size, max_kmer_size)
-elif motif_guided == "True":
-    with open(ref_motifs, 'r') as ref:
-        ref_motifs = ref.readlines()
-    ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
-    ref_motifs_list = [i for l in ref_motifs_list for i in l]
-    all_seq_masked, all_seq_masked_sporadic = mask_all_seq_ref_motif(input_fasta_to_count, min_kmer_size, max_kmer_size, ref_motifs_list)
+    if motif_guided == "False":
+        all_seq_masked, all_seq_masked_sporadic = mask_all_seq(input_fasta_to_count, min_kmer_size, max_kmer_size)
+    elif motif_guided == "True":
+        with open(ref_motifs, 'r') as ref:
+            ref_motifs = ref.readlines()
+        ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
+        ref_motifs_list = [i for l in ref_motifs_list for i in l]
+        all_seq_masked, all_seq_masked_sporadic = mask_all_seq_ref_motif(input_fasta_to_count, min_kmer_size, max_kmer_size, ref_motifs_list)
 
-sys.setrecursionlimit(original_limit)
+    sys.setrecursionlimit(original_limit)
 
-all_seq_df = tag_all_seq(all_seq_dict, all_seq_masked, all_seq_masked_sporadic)
+    all_seq_df = tag_all_seq(all_seq_dict, all_seq_masked, all_seq_masked_sporadic)
 
-all_seq_masked.clear()
-all_seq_masked_sporadic.clear()
+    all_seq_masked.clear()
+    all_seq_masked_sporadic.clear()
 
-unique_motifs = pd.concat([all_seq_df[col] for col in all_seq_df.columns]).unique().tolist()
-if np.nan in unique_motifs:
-    unique_motifs.remove(np.nan)
+    unique_motifs = pd.concat([all_seq_df[col] for col in all_seq_df.columns]).unique().tolist()
+    if np.nan in unique_motifs:
+        unique_motifs.remove(np.nan)
 
-printable_asii_list = generate_hex_chr_list()
-motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list, input_fasta_to_count)
-all_seq_chr_dict = write_seq_in_hex_chr(all_seq_df, motif_chr_dict, input_fasta_to_count, random_num)
-write_compressed_seq(all_seq_chr_dict, motif_chr_dict, input_fasta_to_count, random_num)
+    printable_asii_list = generate_hex_chr_list()
+    motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list, input_fasta_to_count)
+    all_seq_chr_dict = write_seq_in_hex_chr(all_seq_df, motif_chr_dict, input_fasta_to_count, random_num)
+    write_compressed_seq(all_seq_chr_dict, motif_chr_dict, input_fasta_to_count, random_num)
 
-all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
-all_seq_chr_dict.clear()
-alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
-dimension_reduction_result = run_umap(alignment_score_matrix)
+    all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
+    all_seq_chr_dict.clear()
+    alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
+    dimension_reduction_result = run_umap(alignment_score_matrix)
 
 
-if sequence_type == "assembly":
-    population = args.population
-    population_metadata = pd.read_csv(population, sep = "\t", header = None)
-    population_metadata.columns = ["Sample", "Group"]
-    if run_msa == "True":
-        msa = msa_with_characters(input_fasta_to_count, random_num)
-        msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-        plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + "_msa" + ".png"), title, population_metadata, motif_length)
-    elif run_msa == "False":
-        df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-        plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + ".png"), title, population_metadata)
+    if sequence_type == "assembly":
+        population = args.population
+        population_metadata = pd.read_csv(population, sep = "\t", header = None)
+        population_metadata.columns = ["Sample", "Group"]
+        if run_msa == "True":
+            msa = msa_with_characters(input_fasta_to_count, random_num)
+            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
+            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + "_msa" + ".png"), title, population_metadata, motif_length)
+        elif run_msa == "False":
+            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+            print("PLOT")
+            plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + ".png"), title, population_metadata)
+            print('DONE')
 
-elif sequence_type == "reads":
-    if run_msa == "True":
-        msa = msa_with_characters(input_fasta_to_count, random_num)
-        msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-        plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + "_msa" + ".png"), title, motif_length)
-    elif run_msa == "False":
-        df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-        plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + ".png"), title)
+    elif sequence_type == "reads":
+        if run_msa == "True":
+            msa = msa_with_characters(input_fasta_to_count, random_num)
+            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
+            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + "_msa" + ".png"), title, motif_length)
+        elif run_msa == "False":
+            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + ".png"), title)

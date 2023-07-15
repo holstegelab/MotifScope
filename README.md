@@ -15,6 +15,10 @@ A tool for motif annotation and visualization in tandem repeats.
   conda activate motifscope
   ```
 
+- Install aardvark (https://github.com/holstegelab/aardvark)
+  and make the executable available in the path (or set the path with --aardvark_path)
+
+
 ### Usage
 - For running MotifScope on a set of sequences (reads or assemblies) without population data:
 ```bash
