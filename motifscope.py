@@ -4,25 +4,49 @@ import os
 import argparse
 import sys
 import shutil
+
 from Bio import SeqIO, pairwise2
 from Bio.Seq import Seq
 from multiprocess import Pool
 from itertools import repeat, combinations_with_replacement, groupby
+
 import math
 import umap
 import copy
+
 import seaborn as sns
+import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
-import matplotlib
+#import matplotlib.gridspec as gridspec
+
 from random import random
+
 import scipy.cluster.hierarchy as shc
+from scipy.spatial.distance import squareform
+from scipy.stats import rankdata
+
 import Levenshtein
 import binascii
 #import logging
 from suffix_tree import Tree
-#import matplotlib.gridspec as gridspec
 
+
+
+
+class DummyPool:
+    """DummyPool class enables to run in same thread, for easy profiling."""
+    def __init__(self):
+        pass
+
+    def __enter__(self):
+        return self
+    
+    def __exit__(self,type,value,traceback):
+        pass
+
+    def starmap(self, func, args_list):
+        return [func(*args) for args in args_list]
 
 class Kmer:
     def __init__(self, kmer, count, nseq, start_pos_list):
@@ -135,6 +159,7 @@ def count_kmer_per_seq(record, seq_identifier, fasta_file, k_min, k_max):
         count_dict = dict(zip(df["ckmer"], df["count"]))
         count_dict = remove_redundant_kmer(count_dict)
         return count_dict
+        
     else:
         return {}
 
@@ -666,9 +691,60 @@ def get_motif_pairwise_distance_new(motif_list):
 
     return score_df
 
-def run_umap(dm):
-    umap_f = umap.UMAP(n_components = 1, metric = "manhattan", n_neighbors = 10, min_dist = 0.5, random_state = 0)
-    X_transform_L2 = pd.DataFrame(umap_f.fit_transform(dm))
+def run_umap(dm, method='UMAP', rank=0.5, norm=True):
+    """Maps motif distance matrix 'dm' to a 1-dimensional space using UMAP or MDS.
+       :method: string, either 'UMAP' or 'MDS'.
+       :rank: float, between 0 and 1. Transforms between original embedding (0.0) and a fully ranked embedding (1.0, i.e. only the ordering of the motifs is preserved).
+       :norm: bool, whether to normalize the distance matrix by the geometric mean of the sequence lengths.
+    """
+    n_neighbors = min(10,max(5,dm.shape[0]/2)) # 10 or half of the number of motifs, whichever is smaller, with a minimum of 5
+    n_neighbors = int(min(n_neighbors,dm.shape[0])) # cannot be larger than the number of motifs
+
+    data = (-dm).to_numpy(copy=True,dtype=np.float32)
+
+    if norm:
+        dnorm = [len(e) for e in dm.index]
+        snorm = np.sqrt(dnorm)
+        data = data / (snorm[:,np.newaxis] * snorm[np.newaxis,:])
+    
+    if method == 'UMAP':
+        #UMAP has a lot of overhead for small N.
+        #This is much faster than builtin method for finding nearest neighbors for small N
+        if n_neighbors * 5 < dm.shape[0]: #top-k sort for very large motif sets
+            idx = np.argpartition(data,np.arange(n_neighbors),axis=1)[:,:n_neighbors]
+            dist = np.take_along_axis(data,idx,axis=1)
+        else:
+            idx = np.argsort(data,axis=1)[:,:n_neighbors]
+            dist = np.take_along_axis(data,idx,axis=1)
+        
+        #NN-descent only needed for transform of new data (https://github.com/lmcinnes/umap/issues/848)
+        import pynndescent
+        class DummyNNDescent(pynndescent.NNDescent):
+            def __init__(self):
+                return
+        precomputed_knn = (idx,dist, DummyNNDescent())
+    
+        manifold_f = umap.UMAP(n_components = 1, metric = "precomputed", n_neighbors = n_neighbors, min_dist = 0.5, random_state = 0, precomputed_knn=precomputed_knn, force_approximation_algorithm=True)
+
+
+    elif method=="MDS":
+        from sklearn.manifold import MDS
+        manifold_f = MDS(n_components=1, n_init=50, metric=False, dissimilarity='precomputed')
+    else:
+        raise RuntimeError(f'Unknown manifold method {method}. Choose UMAP or MDS.')
+   
+    result = manifold_f.fit_transform(data) 
+    
+    if rank:
+        result = result.ravel()
+        idx = np.argsort(result)
+        df =np.diff(result[idx])
+        r = np.max(result) - np.min(result)
+        w = np.cumsum(df * (1 - rank) + rank * (r / (dm.shape[0] - 1)))
+        result[idx[1:]] = w
+        result[idx[0]] = 0.0
+
+    X_transform_L2 = pd.DataFrame(result)
     X_transform_L2.columns = ["dimension_reduction"]
     X_transform_L2["motif"] = dm.index
     X_transform_L2 = X_transform_L2.astype({"dimension_reduction": float})
@@ -687,12 +763,12 @@ def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_dis
     summary = summary.merge(reads_name, left_on = "index", right_on = "nseq", how = "left").drop(columns = ["index", "nseq"]).set_index("read_name").fillna(0)
     summary.to_csv(input_fasta.replace(".fa", "_umap_" + str(random_num) + "_only_consecutive_same_string_motif_count" + ".txt"), sep = "\t")
     seq_distance_df = seq_distance_df.reset_index().merge(reads_name, left_on = "nseq_1", right_on = "nseq", how = "left").drop(columns = ["nseq_1", "nseq"]).set_index("read_name")
-    clusters = shc.linkage(seq_distance_df, method='average', metric="euclidean")
+    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
     
     plt.figure(figsize=(25, 50), dpi = 200)
     d = shc.dendrogram(Z = clusters, labels = seq_distance_df.index, orientation = "right")
     plt.title(figtitle)
-    plt.savefig(input_fasta.replace(".fa", "_umap_" + str(random_num) + "_only_consecutive_same_string_cluster" + ".png"), bbox_inches = "tight")
+    plt.savefig(input_fasta.replace(".fa", "_umap_" + str(random_num) + "_only_consecutive_same_string_cluster" + f".{args.format}"), bbox_inches = "tight")
     plt.clf()
     return list(reversed(d["ivl"]))
 
@@ -707,7 +783,7 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
 
     summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
     summary = summary.set_index("index")
-    clusters = shc.linkage(seq_distance_df, method='average', metric="euclidean")
+    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
     all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
@@ -778,7 +854,7 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
 
     summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
     summary = summary.set_index("index")
-    clusters = shc.linkage(seq_distance_df, method='average', metric="euclidean")
+    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
     all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
@@ -862,7 +938,7 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
         axs = fig.add_subplot(spec[0, col])
     all_axes = fig.get_axes()    
 
-    clusters = shc.linkage(seq_distance_df, method='average', metric="euclidean")
+    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
     all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
@@ -928,7 +1004,7 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
         axs = fig.add_subplot(spec[0, col])
     all_axes = fig.get_axes()    
 
-    clusters = shc.linkage(seq_distance_df, method='average', metric="euclidean")
+    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
     all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
@@ -974,11 +1050,11 @@ parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count'
                     metavar="input.fa", type=str,
                     help='input fasta file to count')
 
-parser.add_argument('-mink', '--min_kmer', default = None, dest='min_kmer_size',
+parser.add_argument('-mink', '--min_kmer', default = 2, dest='min_kmer_size',
                     metavar=2, type=int,
                     help='minimum k to count')
 
-parser.add_argument('-maxk', '--max_kmer', default = None, dest='max_kmer_size',
+parser.add_argument('-maxk', '--max_kmer', default = 10, dest='max_kmer_size',
                     metavar=10, type=int,
                     help='maximum k to count')
 
@@ -1007,6 +1083,18 @@ parser.add_argument('-ma', '--mafft_path', default = 'mafft', dest='mafft_path',
                     metavar="mafft", type=str,
                     help='path to mafft')
 
+parser.add_argument('-prof', '--profile', action='store_true', dest='profile', default=False,
+                     help='Enable profiling (stored in stats.txt)')
+
+
+parser.add_argument('-e', '--embed_motif_method', default='UMAP', dest='embed_motif_method', 
+                     help='Embedding method for motif color scale (option: MDS or UMAP), default: MDS')
+
+parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', 
+                     help='Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
+
+parser.add_argument('-f', '--format', default='png', dest='format',
+                    help='Image output format (png, pdf, ...). Default: png')
 sys.getrecursionlimit()
 args = parser.parse_args()
 
@@ -1032,11 +1120,22 @@ original_limit = sys.getrecursionlimit()
 new_limit = 3000
 sys.setrecursionlimit(new_limit)
 
+if args.profile:
+    #imports for profiling
+    import cProfile, pstats, io
+    from pstats import SortKey
+    print('Profiling enabled. MultiProcessing disabled.')
+    pr = cProfile.Profile()
+    pr.enable()
+    pool_class = DummyPool
+else:
+    pool_class = Pool
+
 random_num = str(random()).replace('.', '')
 all_seq = list(SeqIO.parse(input_fasta_to_count, "fasta"))
 all_seq_dict = parse_fasta(input_fasta_to_count)
 
-with Pool() as pool:
+with pool_class() as pool:
 
     if motif_guided == "False":
         all_seq_masked, all_seq_masked_sporadic = mask_all_seq(input_fasta_to_count, min_kmer_size, max_kmer_size)
@@ -1066,7 +1165,7 @@ with Pool() as pool:
     all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
     all_seq_chr_dict.clear()
     alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
-    dimension_reduction_result = run_umap(alignment_score_matrix)
+    dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
 
 
     if sequence_type == "assembly":
@@ -1076,18 +1175,28 @@ with Pool() as pool:
         if run_msa == "True":
             msa = msa_with_characters(input_fasta_to_count, random_num)
             msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + "_msa" + ".png"), title, population_metadata, motif_length)
+            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + "_msa" + f".{args.format}"), title, population_metadata, motif_length)
         elif run_msa == "False":
             df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-            print("PLOT")
-            plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + ".png"), title, population_metadata)
-            print('DONE')
+            plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + f".{args.format}"), title, population_metadata)
 
     elif sequence_type == "reads":
         if run_msa == "True":
             msa = msa_with_characters(input_fasta_to_count, random_num)
             msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + "_msa" + ".png"), title, motif_length)
+            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + "_msa" + f".{args.format}"), title, motif_length)
         elif run_msa == "False":
             df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + ".png"), title)
+            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + f".{args.format}"), title)
+
+if args.profile:
+    pr.disable()
+    print('Storing profiling results in stats.txt...')
+    with open('stats.txt','w') as f:
+        sortby = SortKey.CUMULATIVE
+        ps = pstats.Stats(pr, stream=f).sort_stats(sortby)
+        ps.print_stats()
+        ps.print_callers()
+        ps.print_callees()
+
+print('DONE')
