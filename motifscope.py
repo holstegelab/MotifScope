@@ -142,23 +142,26 @@ def count_kmer_per_seq(record, seq_identifier, fasta_file, k_min, k_max):
     #all_kmer_df = pd.DataFrame()
     if str(record) != "":
         seq_length = max([len(x) for x in record.split("x")])
-        k_max = min([k_max, seq_length])
-        tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_").replace("/", "_").replace(";", "_") + ".fa"
-        with open (tmp_file, 'w') as tmp_fasta:
-            tmp_fasta.write(">" + seq_identifier + "\n")
-            tmp_fasta.write(record + "\n")
-           
-        output_cnt_file = tmp_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
-        os.system(f"{args.aardvark_path} kc -k %d -m %d %s > %s "  %(min(len(record) - 1, k_min), min(len(record), k_max)+1, tmp_file, output_cnt_file))
-        df = pd.read_csv(output_cnt_file, header = None, sep = "\t")
-        df.columns = ["kmer", "count"]
-        df["ckmer"] = df.apply(lambda x: min([x["kmer"][i:] + x["kmer"][:i] for i in range(len( x["kmer"]))]), axis = 1)
-        df["count"] = df.apply(lambda x: math.ceil(x["count"]/len(x["ckmer"])), axis = 1)
-        os.system("rm %s" % (output_cnt_file))
-        os.system("rm %s" % (tmp_file))
-        count_dict = dict(zip(df["ckmer"], df["count"]))
-        count_dict = remove_redundant_kmer(count_dict)
-        return count_dict
+        if seq_length> 0:
+            k_max = min([k_max, seq_length])
+            tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_").replace("/", "_").replace(";", "_") + ".fa"
+            with open (tmp_file, 'w') as tmp_fasta:
+                tmp_fasta.write(">" + seq_identifier + "\n")
+                tmp_fasta.write(record + "\n")
+            
+            output_cnt_file = tmp_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
+            os.system(f"{args.aardvark_path} kc -k %d -m %d %s > %s "  %(min(len(record) - 1, k_min), min(len(record), k_max)+1, tmp_file, output_cnt_file))
+            df = pd.read_csv(output_cnt_file, header = None, sep = "\t")
+            df.columns = ["kmer", "count"]
+            df["ckmer"] = df.apply(lambda x: min([x["kmer"][i:] + x["kmer"][:i] for i in range(len( x["kmer"]))]), axis = 1)
+            df["count"] = df.apply(lambda x: math.ceil(x["count"]/len(x["ckmer"])), axis = 1)
+            os.system("rm %s" % (output_cnt_file))
+            os.system("rm %s" % (tmp_file))
+            count_dict = dict(zip(df["ckmer"], df["count"]))
+            count_dict = remove_redundant_kmer(count_dict)
+            return count_dict
+        else:
+            return {}
         
     else:
         return {}
