@@ -1105,7 +1105,7 @@ if shutil.which(args.aardvark_path) is None:
     print(f"Aardvark not found at the specified path '{args.aardvark_path}'. Please provide the correct path to aardvark.")
     sys.exit(1)
 
-if args.run_msa:
+if args.run_msa == "True":
     if not os.path.exists(os.path.join(args.mafft_path, 'hex2maffttext')):
         print(f"Mafft binary hex2maffttext not found within the specified folder '{args.mafft_path}'. Please provide the correct path to mafft binaries.")
         sys.exit(1)
