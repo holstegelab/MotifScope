@@ -243,6 +243,16 @@ def select_all_kmer(seq, index, mink, maxk, sequence_dict):
         n += 1
 
         #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer']))
+    
+    for selected in selected_kmers:
+        #print(f"MASK KMER: {selected['kmer']}")
+        #print('MASKED:')
+        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
+        #print('\n' * 2)
+        #mask sequence with # symbol
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+
     return selected_kmers, marked_positions, seq
 
 
@@ -411,6 +421,21 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
         n += 1
 
         #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer']))
+
+    for selected in selected_kmers:
+        #print(f"MASK KMER: {selected['kmer']}")
+        #print('MASKED:')
+        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
+        #print('\n' * 2)
+        #mask sequence with # symbol
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+    
+    for ref in ref_motifs_list:
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
+        marked_positions.extend([(e, ref) for e in marked_pos])
+    
+       
     return selected_kmers, marked_positions, seq
 
 def mask_all_seq(selected_kmers, marked_positions, seq):
@@ -439,14 +464,13 @@ def transform_to_df(index, marked_positions, seq_dict):
     for seq_key, seq_value in seq_dict.items():
         seq_array = pd.DataFrame(list(seq_value), columns=[seq_key])
 
-        pos = [(t[0], t[1]) for t in marked_positions if t[0] < index[n]]
+        pos = [(t[0], t[1]) for t in marked_positions if start <= t[0] < index[n]]
 
         for p in pos:
             seq_array.iloc[p[0] - start: p[0] - start + len(p[1]), 0] = p[1]
 
-        if n < len(index) - 1:
-            start = index[n + 1]
-            n += 1
+        start = index[n]
+        n += 1
 
         seq_df_list.append(seq_array)
 
@@ -483,8 +507,8 @@ def write_seq_in_hex_chr(all_seq_motif_df, motif_dict, input_fasta_file_name, ra
     with open (chr_fasta_file, 'w') as chr_fasta:
         for column in all_seq_motif_df:
             seq_description = column
-            seq_motif_in_chr = all_seq_motif_chr_df[column].dropna()
-            seq_motif = all_seq_motif_df[column].dropna()
+            seq_motif_in_chr = all_seq_motif_chr_df[column].dropna().tolist()
+            seq_motif = all_seq_motif_df[column].dropna().tolist()
             seq_chr = []
             i = 0
             while i < len(seq_motif):
@@ -739,7 +763,7 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
                 all_axes[2].add_patch(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
                 j += len(all_seq_motifs.iloc[j, i])
             else:
-                break
+                j += 1
 
 
     seq_population = pd.DataFrame({'seq': seq_order_list})
@@ -769,7 +793,8 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
 
 
 def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    #fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(50, 2), dpi = 100)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
@@ -788,7 +813,8 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     all_seq_motifs = all_seq_motifs.transpose()
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
-    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+    #cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+    cmap2 = copy.copy(plt.get_cmap("Spectral"))
     cmap2.set_over('none')
 
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")    
@@ -809,7 +835,7 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
                 j += len(all_seq_motifs.iloc[j, i])
                 
             else:
-                break
+                j += 1
 
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
@@ -1009,7 +1035,7 @@ parser.add_argument('-prof', '--profile', action='store_true', dest='profile', d
 parser.add_argument('-e', '--embed_motif_method', default='UMAP', dest='embed_motif_method', 
                      help='Embedding method for motif color scale (option: MDS or UMAP), default: MDS')
 
-parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', 
+parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', type = float,
                      help='Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
 
 parser.add_argument('-f', '--format', default='png', dest='format',
