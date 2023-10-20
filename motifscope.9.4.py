@@ -411,10 +411,14 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
         print(rseq)
         print('\n' * 2)
         if(rseq.count('.') == 0):
-            kmer = selected['kmer'] * 2
+            kmer = selected['kmer']
             #kmer = selected['kmer']
-            idx = rseq.index(kmer)
-            raise RuntimeError('No masked positions found')
+            #idx = rseq.index(kmer)
+            if rseq.index(kmer):
+                seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+                continue
+            else:
+                raise RuntimeError('No masked positions found')
         #mask sequence with # symbol. The '2' indicates that only stretches of at least 2 consecutive kmers are masked.
         seq, marked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '#')
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
