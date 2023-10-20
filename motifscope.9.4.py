@@ -416,6 +416,7 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
             #idx = rseq.index(kmer)
             if rseq.index(kmer):
                 seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+                n += 1
                 continue
             else:
                 raise RuntimeError('No masked positions found')
