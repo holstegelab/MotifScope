@@ -426,6 +426,12 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
         n += 1
 
         #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer']))
+    for ref in ref_motifs_list:
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
+        if marked_pos != []:
+            marked_positions.extend([(e, ref) for e in marked_pos])
+            selected_kmers += [{'kmer': ref}]
+
 
     for selected in selected_kmers:
         #print(f"MASK KMER: {selected['kmer']}")
@@ -435,23 +441,20 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
         #mask sequence with # symbol
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
-    
-    for ref in ref_motifs_list:
-        seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
-        marked_positions.extend([(e, ref) for e in marked_pos])
-    
-       
+           
     return selected_kmers, marked_positions, seq
 
 def mask_all_seq(selected_kmers, marked_positions, seq):
+    '''
     for selected in selected_kmers:
         print(f"MASK KMER: {selected['kmer']}")
         print('MASKED:')
-        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
+        print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
         print('\n' * 2)
         #mask sequence with # symbol
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+    '''
 
 
     for s in selected_kmers:
