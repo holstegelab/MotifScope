@@ -175,23 +175,25 @@ def select_best_kmers(k_min, k_max, seq, index, used_kmer, round, min_count=2, m
 
 
         else:
-
             selected_kmer_object = {}
             kmer_set_selected = res[0]['min_kmer']
             kmer_selected = select_best_perm_kmer(kmer_set_selected, kmers_with_min, used_kmer)
-            kmer_set = []
-            for kmer in kmers_with_min:
-                if kmer['min_kmer'] == kmer_set_selected:
-                    kmer_set += [kmer]
-            
-            for kmer in kmer_set:
-                if kmer['kmer'] == kmer_selected:
-                    selected_kmer_object = kmer
-            
-            positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
-            total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
-            candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
-                            'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+            if seq.index(kmer_selected*2):
+                kmer_set = []
+                for kmer in kmers_with_min:
+                    if kmer['min_kmer'] == kmer_set_selected:
+                        kmer_set += [kmer]
+                
+                for kmer in kmer_set:
+                    if kmer['kmer'] == kmer_selected:
+                        selected_kmer_object = kmer
+
+                positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+            else:
+                candidate_kmer = res[0]
         used_kmer += [candidate_kmer['kmer']]
 
         return (candidate_kmer, suffix_ar, mkmer_ar, used_kmer)
@@ -353,21 +355,40 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
         else:
             if kmer_set_selected in ref_motifs_dict_r:
                 kmer_selected = ref_motifs_dict_r[kmer_set_selected]
+                for kmer in kmers_with_min:
+                    if kmer['min_kmer'] == kmer_set_selected:
+                        kmer_set += [kmer]
+                
+                for kmer in kmer_set:
+                    if kmer['kmer'] == kmer_selected:
+                        selected_kmer_object = kmer
+                
+                positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+            
             else:
                 kmer_selected = select_best_perm_kmer(kmer_set_selected, kmers_with_min, used_kmer)
             
-            for kmer in kmers_with_min:
-                if kmer['min_kmer'] == kmer_set_selected:
-                    kmer_set += [kmer]
-            
-            for kmer in kmer_set:
-                if kmer['kmer'] == kmer_selected:
-                    selected_kmer_object = kmer
-            
-            positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
-            total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
-            candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
-                            'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+                #if seq.index(kmer_selected*2):
+                if kmer_selected*2 in seq:
+                    kmer_set = []
+                    for kmer in kmers_with_min:
+                        if kmer['min_kmer'] == kmer_set_selected:
+                            kmer_set += [kmer]
+                    
+                    for kmer in kmer_set:
+                        if kmer['kmer'] == kmer_selected:
+                            selected_kmer_object = kmer
+
+                    positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                    total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                    candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                    'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+                else:
+                    candidate_kmer = res[0]
+
         used_kmer += [candidate_kmer['kmer']]
 
         return (candidate_kmer, suffix_ar, mkmer_ar, used_kmer)
@@ -410,6 +431,12 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
         rseq, rmarked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '.')
         print(rseq)
         print('\n' * 2)
+        '''        if(rseq.count('.') == 0):
+            kmer = selected['kmer'] * 2
+            #kmer = selected['kmer']
+            idx = rseq.index(kmer)
+            raise RuntimeError('No masked positions found')'''
+
         if(rseq.count('.') == 0):
             kmer = selected['kmer']
             #kmer = selected['kmer']
@@ -425,7 +452,7 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
         n += 1
 
-        #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer']))
+        #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer'])) 
     for ref in ref_motifs_list:
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
         if marked_pos != []:
