@@ -784,9 +784,14 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
     
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+   
     all_axes[2].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
-    all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
+    all_axes[2].set_xticks(xticks_positions)
+    all_axes[2].set_xticklabels(xticks_labels)
+    all_axes[2].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
     all_seq_motifs = all_seq_motifs.transpose()
@@ -828,8 +833,8 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
 
 
 def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
-    #fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
-    fig = plt.figure(figsize=(50, 2), dpi = 100)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    #fig = plt.figure(figsize=(50, 2), dpi = 100)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
@@ -848,16 +853,20 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     all_seq_motifs = all_seq_motifs.transpose()
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
-    #cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-    cmap2 = copy.copy(plt.get_cmap("Spectral"))
+    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
     cmap2.set_over('none')
 
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")    
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
-    all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
+    all_axes[1].set_xticks(xticks_positions)
+    all_axes[1].set_xticklabels(xticks_labels)
+    all_axes[1].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
     all_seq_motifs = all_seq_motifs.transpose()
@@ -942,9 +951,14 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[2].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[2].set_xticks(xticks_positions)
+    all_axes[2].set_xticklabels(xticks_labels)
     all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
 
     for i in range(df.shape[0]):
         j = 0
@@ -1005,9 +1019,14 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[1].set_xticks(xticks_positions)
+    all_axes[1].set_xticklabels(xticks_labels)
     all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
 
 
     for i in range(df.shape[0]):
