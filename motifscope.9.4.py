@@ -177,6 +177,7 @@ def select_best_kmers(k_min, k_max, seq, index, used_kmer, round, min_count=2, m
         else:
             selected_kmer_object = {}
             kmer_set_selected = res[0]['min_kmer']
+            min_kmer = res[0]['min_kmer']
             kmer_selected = select_best_perm_kmer(kmer_set_selected, kmers_with_min, used_kmer)
             if seq.index(kmer_selected*2):
                 kmer_set = []
@@ -337,6 +338,7 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
     else:
         selected_kmer_object = {}
         kmer_set_selected = res[0]['min_kmer']
+        min_kmer = res[0]['min_kmer']
         kmer_set = []
         if round == 0:
             if kmer_set_selected in ref_motifs_dict_r:
@@ -394,7 +396,7 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
         return (candidate_kmer, suffix_ar, mkmer_ar, used_kmer)
 
 
-def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_motifs_list):
+def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
     ref_motifs_dict = {}
     for motif in ref_motifs_list:
         ref_motifs_dict[motif] = min([motif[x:] + motif[:x] for x in range(len(motif))])
@@ -443,6 +445,7 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
             #idx = rseq.index(kmer)
             if rseq.index(kmer):
                 seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+                marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
                 n += 1
                 continue
             else:
@@ -456,8 +459,10 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, sequence_dict, ref_moti
     for ref in ref_motifs_list:
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
         if marked_pos != []:
+            print(ref)
             marked_positions.extend([(e, ref) for e in marked_pos])
-            selected_kmers += [{'kmer': ref}]
+            if selected_kmers not in selected_kmers:
+                selected_kmers += [{'kmer': ref}]
 
 
     for selected in selected_kmers:
@@ -788,9 +793,9 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
     all_axes[2].set(ylabel="")
     xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
     xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False, rotation=0)
     all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels)
+    all_axes[2].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
@@ -1019,7 +1024,7 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_positions = np.arange(0, df.shape[1], 50) 
     xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
     all_axes[1].set_xticks(xticks_positions)
@@ -1137,7 +1142,7 @@ with pool_class() as pool:
             ref_motifs = ref.readlines()
         ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
         ref_motifs_list = [i for l in ref_motifs_list for i in l]
-        candidate_kmer, masked_postion, masked_seq = select_all_kmer_motif_guided(seq_concat, seq_index, min_kmer_size, max_kmer_size, all_seq_dict, ref_motifs_list)
+        candidate_kmer, masked_postion, masked_seq = select_all_kmer_motif_guided(seq_concat, seq_index, min_kmer_size, max_kmer_size, ref_motifs_list)
 
         
 
