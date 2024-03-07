@@ -30,91 +30,8 @@ import Levenshtein
 import binascii
 #import logging
 from suffix_tree import Tree
+import pylibsais
 
-
-
-
-class DummyPool:
-    """DummyPool class enables to run in same thread, for easy profiling."""
-    def __init__(self):
-        pass
-
-    def __enter__(self):
-        return self
-    
-    def __exit__(self,type,value,traceback):
-        pass
-
-    def starmap(self, func, args_list):
-        return [func(*args) for args in args_list]
-
-class Kmer:
-    def __init__(self, kmer, count, nseq, start_pos_list):
-        self.kmer = kmer
-        self.all_counts = count
-        self.start_pos_list = start_pos_list
-        indel_size, indel_start, indel_end = get_indel_size(self.kmer, self.start_pos_list)
-        self.max_kmer_mask = {(nseq, kmer): max(indel_size or [0])}
-        indel_pos_list = [(indel_start[i], indel_end[i], self.kmer) for i in range(len(indel_start))]
-        self.consecutive_region = {(nseq, kmer): indel_pos_list}
-        self.sum_kmer_consecutive_mask_per_seq = {(nseq, kmer): sum(y for y in indel_size if y > len(self.kmer))}
-        self.sum_kmer_mask_per_seq = {(nseq, kmer): sum(indel_size)}
-        self.sum_kmer_consecutive_mask = {kmer: sum(y for y in indel_size if y > len(self.kmer))}
-                    
-    def merge_seq(self, obj):
-        self.max_kmer_mask = {**self.max_kmer_mask, **obj.max_kmer_mask}
-        self.consecutive_region = {**self.consecutive_region, **obj.consecutive_region}
-        self.sum_kmer_consecutive_mask_per_seq = {**self.sum_kmer_consecutive_mask_per_seq, **obj.sum_kmer_consecutive_mask_per_seq}
-        self.sum_kmer_mask_per_seq = {**self.sum_kmer_mask_per_seq, **obj.sum_kmer_mask_per_seq}
-        for shift_kmer in self.sum_kmer_consecutive_mask:
-            self.sum_kmer_consecutive_mask[shift_kmer] += obj.sum_kmer_consecutive_mask[shift_kmer]
-    
-    def perm_kmer(self, another_kmer, nseq, another_start_pos_list):
-            if another_kmer != self.kmer:
-                another_kmer_indel_size, another_kmer_indel_start, another_kmer_indel_end = get_indel_size(another_kmer, another_start_pos_list)
-                self.max_kmer_mask[(nseq, another_kmer)] = max(another_kmer_indel_size or [0])
-                indel_pos_list = [(another_kmer_indel_start[i], another_kmer_indel_end[i], another_kmer) for i in range(len(another_kmer_indel_start))]
-                self.consecutive_region[(nseq, another_kmer)] = indel_pos_list
-                self.sum_kmer_consecutive_mask_per_seq[(nseq, another_kmer)] = sum(y for y in another_kmer_indel_size if y > len(another_kmer))
-                self.sum_kmer_mask_per_seq[(nseq, another_kmer)] = sum(another_kmer_indel_size)
-                self.sum_kmer_consecutive_mask[another_kmer] = sum(y for y in another_kmer_indel_size if y > len(another_kmer))
-
-def get_indel_size(kmer, start_pos_list):
-    start_pos_no_overlap = []
-    start_pos_list = list(start_pos_list)
-    start_pos_list.sort()
-    for x in start_pos_list:
-        if not start_pos_no_overlap:
-            start_pos_no_overlap.append(x)
-        elif x - start_pos_no_overlap[-1] >= len(kmer):
-            start_pos_no_overlap.append(x)
-
-    if len(start_pos_no_overlap) == 1:
-        return [len(kmer)], [start_pos_no_overlap[0]], [start_pos_no_overlap[0] + len(kmer)]
-    merged_start = []
-    merged_end = []
-    size = []
-    for i in range(len(start_pos_no_overlap)):
-        if i == 0:
-            start_pos = start_pos_no_overlap[i]
-            masked_size = len(kmer)
-        elif start_pos_no_overlap[i] - start_pos_no_overlap[i - 1] == len(kmer):
-            masked_size += len(kmer)
-            if i == len(start_pos_no_overlap) - 1:
-                merged_start += [start_pos]
-                merged_end += [start_pos + masked_size]
-                size += [masked_size]
-        else:
-            merged_start += [start_pos]
-            merged_end += [start_pos + masked_size]
-            size += [masked_size]
-            start_pos = start_pos_no_overlap[i]
-            masked_size = len(kmer)
-            if i == len(start_pos_no_overlap) - 1:
-                merged_start += [start_pos]
-                merged_end += [start_pos + masked_size]
-                size += [masked_size]
-    return size, merged_start, merged_end
 
 def parse_fasta(filename):
     """Parse a FASTA file and return a dictionary of sequences"""
@@ -124,121 +41,33 @@ def parse_fasta(filename):
             sequences[record.description] = str(record.seq)
     return sequences
 
-def count_kmer(all_seq, fasta_file, k_min, k_max):
-    shorted_len = min(len(value) for value in all_seq.values())
-    output_cnt_file = fasta_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
-    os.system(f"{args.aardvark_path} kc -k %d -m %d %s > %s " %(min(shorted_len - 1, k_min), min(shorted_len, k_max), fasta_file, output_cnt_file))
-    df = pd.read_csv(output_cnt_file, sep='\t', header=None)
-    os.system("rm %s" % (output_cnt_file))
-    count_dict = dict(zip(df[0], df[1]))
-    count_dict = remove_redundant_kmer(count_dict)
-    return count_dict
+def prepare_suffix_string(sequence_dict):
+    """Prepare a sequence dictionary in format required by pylibsais."""
+    keys = []
+    values = []
+    index = []
+    pos = 0
+    for k,v in sequence_dict.items():
+        keys.append(k)
+        values.append(v)
+        pos += len(v) + 1
+        index.append(pos)
+    index = np.array(index)
+    seq = '$'.join(values) + '$'
 
+    return (seq, index) 
 
+def get_positions(suffix_ar, kmer_idx, kmer_cnt):
+    """Get all (sorted) positions of a kmer in a sequence"""
+    positions = suffix_ar[kmer_idx:kmer_idx+kmer_cnt]
+    return np.sort(positions)
 
-def count_kmer_per_seq(record, seq_identifier, fasta_file, k_min, k_max):
-    #all_rounds_kmer = pd.DataFrame()
-    #seq_used_motif = pd.DataFrame()
-    #all_kmer_df = pd.DataFrame()
-    if str(record) != "":
-        seq_length = max([len(x) for x in record.split("x")])
-        if seq_length> 0:
-            k_max = min([k_max, seq_length])
-            tmp_file = fasta_file.replace(".fa", "_") + "tmp_seq_" + str(seq_identifier).replace(" ", "_").replace("/", "_").replace(";", "_") + ".fa"
-            with open (tmp_file, 'w') as tmp_fasta:
-                tmp_fasta.write(">" + seq_identifier + "\n")
-                tmp_fasta.write(record + "\n")
-            
-            output_cnt_file = tmp_file.replace(".fa", "." + str(k_min) + "." + str(k_max) + "mer.txt")
-            os.system(f"{args.aardvark_path} kc -k %d -m %d %s > %s "  %(min(len(record) - 1, k_min), min(len(record), k_max)+1, tmp_file, output_cnt_file))
-            df = pd.read_csv(output_cnt_file, header = None, sep = "\t")
-            df.columns = ["kmer", "count"]
-            df["ckmer"] = df.apply(lambda x: min([x["kmer"][i:] + x["kmer"][:i] for i in range(len( x["kmer"]))]), axis = 1)
-            df["count"] = df.apply(lambda x: math.ceil(x["count"]/len(x["ckmer"])), axis = 1)
-            os.system("rm %s" % (output_cnt_file))
-            os.system("rm %s" % (tmp_file))
-            count_dict = dict(zip(df["ckmer"], df["count"]))
-            count_dict = remove_redundant_kmer(count_dict)
-            return count_dict
-        else:
-            return {}
-        
-    else:
-        return {}
-
-def count_all_kmers(all_seq, fasta_file, k_min, k_max):
-    all_count = {}
-    for seq in all_seq:
-        all_count[seq] = count_kmer_per_seq(all_seq[seq], seq, fasta_file, k_min, k_max)
-    return all_count
-
-def count_all_kmers_multi(all_seq, fasta_file, k_min, k_max):
-    
-    count_list = pool.starmap(count_kmer_per_seq, zip(all_seq.values(), all_seq.keys(), repeat(fasta_file), repeat(k_min), repeat(k_max)))
-    seq_list = list(all_seq.keys())
-    all_count = {}
-    for i in range(len(count_list)):
-        all_count[seq_list[i]] = count_list[i]
-    return all_count
-
-def is_smallest_kmer(kmer):
-    k = 1
-    while k <= int((len(kmer) + 1) / 2):
-        if len(kmer) % k == 0:
-            sub = [kmer[i:i+k] for i in range(0, len(kmer), k)]
-            if sub.count(sub[0]) == len(sub):
-                unit = sub[0]
-                break
-            else:
-                k += 1
-        else:
-            k += 1
-    if k == int((len(kmer) + 1) / 2) + 1:
-        unit = kmer
-    return kmer == unit
-
-def remove_redundant_kmer(kmer_dict):
-    keys_to_keep = [key for key in kmer_dict if is_smallest_kmer(key)]
-    keys_to_keep = [key for key in keys_to_keep if kmer_dict[key] > 1]
-    return {key:value for key,value in kmer_dict.items() if key in keys_to_keep}
-
-
-def find_positions(input_string, substring_list):
-    st = Tree({"seq": input_string})
-    kmer_start = {}
-    for substring in substring_list:
-        start_pos = []
-        for id_, path in st.find_all(substring):
-            start_pos += [len(input_string)-len(str(path).strip("$").replace(" ", ""))]
-        kmer_start[substring] = start_pos
-    return kmer_start
-
-def find_sporadic(seq, kmer_list):
-    if seq == '':
-        return []
-    else:
-        start_pos_dict = find_positions(seq, kmer_list)
-        start_pos_dict = {key:value for key, value in start_pos_dict.items() if value != {}}
-        return start_pos_dict
-
-
-def select_kmer_fast(kmer_per_seq):
-    kmer_perm_dict = {}
-
-    for kmer_one_seq in kmer_per_seq:
-        for kmer_set in kmer_one_seq:
-            if not kmer_perm_dict:
-                for a in kmer_set.perm_kmer:
-                    kmer_perm_dict[a] = kmer_set
-            else:
-                if kmer_set.kmer in kmer_perm_dict:
-                    kmer_perm_dict[kmer_set.kmer].merge_seq(kmer_set)
-                else:
-                    for a in kmer_set.perm_kmer:
-                        kmer_perm_dict[a] = kmer_set
-
-    kmer_all_seq = [kmer for kmer in set(kmer_perm_dict.values()) if max(kmer.max_kmer_mask.values()) / len(kmer.kmer) > 1]
-    return sorted(kmer_all_seq, key = lambda x: [max(x.max_kmer_mask.values()), -max(x.max_kmer_mask.values())/len(x.kmer), x.count], reverse = True)
+def get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len):
+    """Get the sequence of a kmer"""
+    #get location of one of the kmer copies in original sequencedd
+    xloc = suffix_ar[kmer_idx]
+    #get the kmer sequence
+    return seq[xloc:xloc+kmer_len]
 
 def pairwise_alignment(seq1, seq2):
     from Bio import pairwise2
@@ -248,288 +77,444 @@ def pairwise_alignment(seq1, seq2):
         scores.append(alignment.score)
     return max(scores)
 
-def get_best_perm_kmer(kmer_obj, previous_kmer):
-    perm_kmer = []
-    regions = list(kmer_obj.consecutive_region.values())
-    regions = [item for sublist in regions for item in sublist]
-    for region in regions:
-        if region[1] - region[0] > len(kmer_obj.kmer):
-            if region[2] not in perm_kmer:
-                perm_kmer += [region[2]]
-    if len(perm_kmer) == 0:
-        for region in regions:
-            if region[2] not in perm_kmer:
-                perm_kmer += [region[2]]
-
-    perm_kmer_score = list(map(lambda i: sum([pairwise_alignment(a, i) for a in previous_kmer]), perm_kmer))
-
+def select_best_perm_kmer(new_kmer, kmer_list, previous_kmer):
+    perm_kmer = [new_kmer[x:] + new_kmer[:x] for x in range(len(new_kmer))]
+    all_kmer_list = [kmer['kmer'] for kmer in kmer_list]
+    perm_kmer_exist = []
+    for kmer in perm_kmer:
+        if kmer in all_kmer_list:
+            perm_kmer_exist += [kmer]
+    perm_kmer_score = list(map(lambda i: sum([pairwise_alignment(a, i) for a in previous_kmer]), perm_kmer_exist))
     kmer_idx = perm_kmer_score.index(max(perm_kmer_score))
-    return perm_kmer[kmer_idx]
+    return perm_kmer_exist[kmer_idx]
 
-def consecutive_mask_seq(seq, seq_number, kmer, kmer_obj):
-    regions = kmer_obj.consecutive_region[(seq_number, kmer)]
-    masked_region = []
-    for region in regions:
-        if region[1] - region[0] > len(kmer):
-            if "x" not in seq[region[0]:region[1]]:
-                seq = seq[:region[0]] + "x" * (region[1] - region[0]) + seq[region[1]:]
-                masked_region += [region]
-    return seq, {(seq_number, kmer): masked_region}
+def select_best_kmers(k_min, k_max, seq, index, used_kmer, round, min_count=2, min_indiv_count=2, min_consecutive_count=2, min_consecutive_bp=6):
+    """Select k-mers based on the amount of sequence masked.
 
-def sporadic_mask_seq(seq, seq_number, kmer, kmer_obj):
-    regions = kmer_obj.consecutive_region[(seq_number, kmer)]
-    masked_region = []
-    for region in regions:
-        if region[1] - region[0] == len(kmer):
-            if "x" not in seq[region[0]:region[1]]:
-                seq = seq[:region[0]] + "x" * (region[1] - region[0]) + seq[region[1]:]
-                masked_region += [region]
-    return seq, {(seq_number, kmer): masked_region}
+    :param k_min: the minimum k-mer length
+    :param k_max: the maximum k-mer length
+    :param seq: the sequence to search, as prepared by prepare_suffix_string
+    :param index: the index of the end of each sequence in seq, as prepared by prepare_suffix_string
+    :param min_count: the minimum number of times a k-mer should occur in the full combined sequence (including overlaps)
+    :param min_indiv_count: the minimum number of times a k-mer should occur in a single sequence (excluding overlaps)
+    :param min_consecutive_count: the minimum number of consecutive times a k-mer should occur in a single sequence
+    :param min_consecutive_bp: the minimum number of consecutive bases that need to be covered by the k-mer
+    """
 
-def sporadic_mask_seq_new(seq, seq_number, kmer_dict):
-    to_be_masked_dict = {}
-    for kmer in kmer_dict:
-        regions = get_indel_size(kmer, list(kmer_dict[kmer]))
-        #print(regions)
-        masked_region = []
-        for i in range(len(regions[0])):
-            if regions[0][i] == len(kmer):
-                if "x" not in seq[regions[1][i]:regions[2][i]]:
-                    seq = seq[:regions[1][i]] + "x" * (regions[2][i] - regions[1][i]) + seq[regions[2][i]:]
-                    masked_region += [(regions[1][i], regions[2][i], kmer)]
-        to_be_masked_dict[(seq_number, kmer)] = masked_region
-
-    return seq, to_be_masked_dict
-
-def drop_kmer(selected_kmer, kmer_list_per_seq, df):
-    for i in range(len(kmer_list_per_seq)):
-        if selected_kmer == kmer_list_per_seq[i][0].kmer:
-            df = df.drop(df[df["nseq"] == kmer_list_per_seq[i][0].nseq & df["cnt"] >= df.loc[df['ckmer'] == selected_kmer, 'cnt'].values[0]].index)
-            
-    return df
-
-
-def kmer_selection(all_seq, kmer_counts):
-    all_kmer_counts  = {}
-    for seq in kmer_counts:
-        for kmer in kmer_counts[seq]:
-            if kmer in all_kmer_counts:
-                all_kmer_counts[kmer] += kmer_counts[seq][kmer]
-            else:
-                all_kmer_counts[kmer] = kmer_counts[seq][kmer]
-    max_kmer_counts = {}
-    for seq in kmer_counts:
-        for kmer in kmer_counts[seq]:
-            if kmer in max_kmer_counts:
-                max_kmer_counts[kmer] = max([kmer_counts[seq][kmer], max_kmer_counts[kmer]])
-            else:
-                max_kmer_counts[kmer] = kmer_counts[seq][kmer]
+    #create suffix and LCP array
+    suffix_ar, lcp_ar = pylibsais.sais(seq)
+    #determine maximum length of valid suffixes at each position (should stop at $ and # symbol)
+    mkmer_ar = pylibsais.max_suffix(seq)
     
 
-    kmer_to_screen_list = sorted(max_kmer_counts, key=lambda k: [max_kmer_counts[k], -len(k)], reverse = True)
+    #get all kmers with min_count or more copies
+    #returns no repetitive k-mers, but does return overlapping k-mers
+    kmers = list(pylibsais.kmer_count(seq, suffix_ar, lcp_ar, mkmer_ar, k_min, k_max, min_count))
+    kmers.sort(key=lambda x: (x[0] * x[2]), reverse=True) #sort on length * count, so that kmers that mask longer sequences are first
 
-    st = Tree(all_seq)
-    kmer_set_dict = {}
-    all_start_pos = {}
-    max_mask = 0
-    for kmer in kmer_to_screen_list:
-        if len(kmer) * max_kmer_counts[kmer] > max_mask:
-            for shift_kmer in [kmer[x:] + kmer[:x] for x in range(len(kmer))]:
-                start_pos = {seq:[] for seq in all_seq}
-                for id_, path in st.find_all(shift_kmer):
-                    start_pos[id_] += [len(all_seq[id_])-len(str(path).strip("$").replace(" ", ""))]
-                all_start_pos[shift_kmer] = start_pos
-            
-            for seq in all_seq:
-                kmer_object = Kmer(kmer, all_kmer_counts[kmer], seq, all_start_pos[kmer][seq])
-                for shift_kmer in [kmer[x:] + kmer[:x] for x in range(len(kmer))]:
-                    kmer_object.perm_kmer(shift_kmer, seq, all_start_pos[shift_kmer][seq])
-                if kmer in kmer_set_dict:
-                    kmer_set_dict[kmer].merge_seq(kmer_object)
-                else:
-                    kmer_set_dict[kmer] = kmer_object
-            if max(kmer_set_dict[kmer].max_kmer_mask.values()) / len(kmer) > 1:
-                max_mask = max(max_mask, max(kmer_set_dict[kmer].max_kmer_mask.values()))
-
-        else:
-            continue
-    st = None
-    kmer_all_seq = [kmer for kmer in set(kmer_set_dict.values()) if max(kmer.max_kmer_mask.values()) / len(kmer.kmer) > 1]
-    return sorted(kmer_all_seq, key = lambda x: [max(x.max_kmer_mask.values()), -len(x.kmer)], reverse = True)
-
-
-
-def mask_all_seq(input_fasta, min_k, max_k):
-    n = 0
-    all_seq = parse_fasta(input_fasta)
-    seq_to_be_masked = all_seq.copy()
-    seq_list = [str(seq) for seq in all_seq.values()]
-    selected_kmer_list = []
-    all_seq_masked_dict = {}
-    output_fasta = input_fasta.replace(".fa", ".tmp.fa")
-    os.system("cp %s %s" %(input_fasta, output_fasta))
-    #while max([len(x) for x in seq_list]) != 1:
-    while max([len(x) for x in seq_list]) >= min_k:
-        print("counting kmer")
-        all_seq_dict = parse_fasta(output_fasta)
-        kmer_counts = count_all_kmers_multi(all_seq_dict, output_fasta, min_k, max_k)
-        print("selecting kmer")
-        kmer_set_all_seq = kmer_selection(all_seq_dict, kmer_counts)
-        if len(kmer_set_all_seq) == 0:
+    #print(f'KMER CANDIDATES: {len(kmers)}')
+    #for kmer_len, kmer_idx, kmer_cnt in kmers:
+    #    print(f"- {get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len)}: {kmer_cnt} copies of length {kmer_len}")
+    
+    kmers_with_min = []
+    '''
+    for kmer_len, kmer_idx, kmer_cnt in kmers:
+        kmers_with_min += [{'kmer_len': kmer_len, 'kmer_idx': kmer_idx, 'kmer_cnt':kmer_cnt, 'kmer':get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len), 'min_kmer': pylibsais.min_string(get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len))}]
+    '''
+    res = []
+    max_continuous_masked_bp = 0
+    evaluated = 0
+    #walk across possible kmers
+    for kmer_len, kmer_idx, kmer_cnt in kmers:
+        #stop if we cannot improve on the current best
+        if (kmer_cnt * kmer_len) < max_continuous_masked_bp:
             break
+
+        
+        #determine how much of the sequence is masked by this kmer
+        total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, kmer_len, kmer_idx, kmer_cnt)
+        evaluated += 1
+
+        #do not report kmer if it is worse than the current best
+        #apply filter constraints (see function parameters)
+        if max_consecutive_count * kmer_len < max_continuous_masked_bp or \
+            max_indiv_seq_count < min_indiv_count or \
+            max_consecutive_count < min_consecutive_count or \
+            max_consecutive_count * kmer_len < min_consecutive_bp:
+            continue
+
+        kmers_with_min += [{'kmer_len': kmer_len, 'kmer_idx': kmer_idx, 'kmer_cnt':kmer_cnt, 'kmer':get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len), 'min_kmer': pylibsais.min_string(get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len))}]
+
+        max_continuous_masked_bp = max_consecutive_count * kmer_len
+
+        #get the kmer sequence
+        kmer_s = get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len)
+        min_kmer = pylibsais.min_string(kmer_s)
+        
+        #get all positions of the kmer in 'seq' (can be overlapping)
+        positions = get_positions(suffix_ar, kmer_idx, kmer_cnt)
+
+        res.append({'kmer':kmer_s, 'min_kmer': min_kmer, 'suffix_cnt': kmer_cnt, 'total_masked': total_masked, 
+                        'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * kmer_len, 'pos':positions, 'idx':kmer_idx})
+    
+    res.sort(key=lambda x: (x['max_consecutive_masked'], x['max_indiv_seq_count'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
+    #res.sort(key=lambda x: (x['max_consecutive_masked'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
+
+    
+    print(f'KMER EVALUATED: {evaluated}')
+    print(f'KMER SELECTED: {len(res)}')
+
+    if len(res) == 0:
+        return ({}, suffix_ar, mkmer_ar, used_kmer)
+
+    else:
+
+        if round == 0:
+            #sort kmers on priority: max continuous masked, then max count in individual sequence, then total masked, then length, then alphabetically
+            candidate_kmer = res[0]
+
+
         else:
-            selected_kmer = kmer_set_all_seq[0]
-            if len(selected_kmer.kmer) == 1:
-                break
-            else: 
-                if n == 0: 
-                    sum_max_perm_kmer_region = {}
-                    for kmer_region in selected_kmer.max_kmer_mask:
-                        if kmer_region[1] in sum_max_perm_kmer_region:
-                            sum_max_perm_kmer_region[kmer_region[1]] += selected_kmer.max_kmer_mask[kmer_region]
-                        else:
-                            sum_max_perm_kmer_region[kmer_region[1]] = selected_kmer.max_kmer_mask[kmer_region]
-                    kmer = sorted(sum_max_perm_kmer_region, key = sum_max_perm_kmer_region.get, reverse = True)[0]
-                else:
-                    #logging.debug("getting best perm kmer")
-                    kmer = get_best_perm_kmer(selected_kmer, selected_kmer_list)
-                    #logging.debug("best kmer selected")
-                #logging.debug(kmer)
-                print(kmer)
-                selected_kmer_list += [kmer]
-                one_kmer_masked = {}
-                for region in selected_kmer.max_kmer_mask:
-                    if region[1] == kmer:
-                        if selected_kmer.max_kmer_mask[region] != 0:
-                            seq_to_be_masked[region[0]], masked_region = consecutive_mask_seq(seq_to_be_masked[region[0]], region[0], kmer, selected_kmer)
-                            one_kmer_masked = {**one_kmer_masked, **masked_region}
-                        
-                if all(value == [] for value in one_kmer_masked.values()):
-                    break
+            selected_kmer_object = {}
+            kmer_set_selected = res[0]['min_kmer']
+            min_kmer = res[0]['min_kmer']
+            kmer_selected = select_best_perm_kmer(kmer_set_selected, kmers_with_min, used_kmer)
+            if seq.index(kmer_selected*2):
+                kmer_set = []
+                for kmer in kmers_with_min:
+                    if kmer['min_kmer'] == kmer_set_selected:
+                        kmer_set += [kmer]
                 
+                for kmer in kmer_set:
+                    if kmer['kmer'] == kmer_selected:
+                        selected_kmer_object = kmer
+
+                positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+            else:
+                candidate_kmer = res[0]
+        used_kmer += [candidate_kmer['kmer']]
+
+        return (candidate_kmer, suffix_ar, mkmer_ar, used_kmer)
+
+
+
+
+
+def select_all_kmer(seq, index, mink, maxk, sequence_dict):
+    #seq, index= prepare_suffix_string(sequence_dict)
+
+    #kmers that are selected
+    selected_kmers = []
+
+    #positions that are masked (list of tuples of position and kmer)
+    marked_positions = []
+
+    used_kmer = []
+    n = 0
+    #repeat until no (consequtive) kmers are found
+    while True:    
+        res, sa, mask, used_kmer = select_best_kmers(mink, maxk, seq, index, used_kmer, n)
+        #res, sa, mask = select_best_kmers(2, 30, seq, index)
+        
+        if res == {}:
+            break
+        
+        selected = res
+        #selected = res[0]
+        selected_kmers.append(selected) 
+
+        print(f"SELECT KMER: {selected['kmer']}")
+        for k,v in selected.items():
+            if k != 'kmer':
+                print(f"- {k}: {v}")
+        
+        print('MASKED:')
+        rseq, rmarked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '.')
+        print(rseq)
+        print('\n' * 2)
+        if(rseq.count('.') == 0):
+            kmer = selected['kmer'] * 2
+            #kmer = selected['kmer']
+            idx = rseq.index(kmer)
+            raise RuntimeError('No masked positions found')
+        #mask sequence with # symbol. The '2' indicates that only stretches of at least 2 consecutive kmers are masked.
+        seq, marked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+        n += 1
+
+        #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer']))
+    
+    for selected in selected_kmers:
+        #print(f"MASK KMER: {selected['kmer']}")
+        #print('MASKED:')
+        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
+        #print('\n' * 2)
+        #mask sequence with # symbol
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+
+    return selected_kmers, marked_positions, seq
+
+
+def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, ref_motifs_dict_r, min_count=2, min_indiv_count=2, min_consecutive_count=2, min_consecutive_bp=6):
+    """Select k-mers based on the amount of sequence masked.
+
+    :param k_min: the minimum k-mer length
+    :param k_max: the maximum k-mer length
+    :param seq: the sequence to search, as prepared by prepare_suffix_string
+    :param index: the index of the end of each sequence in seq, as prepared by prepare_suffix_string
+    :param min_count: the minimum number of times a k-mer should occur in the full combined sequence (including overlaps)
+    :param min_indiv_count: the minimum number of times a k-mer should occur in a single sequence (excluding overlaps)
+    :param min_consecutive_count: the minimum number of consecutive times a k-mer should occur in a single sequence
+    :param min_consecutive_bp: the minimum number of consecutive bases that need to be covered by the k-mer
+    """
+
+    #create suffix and LCP array
+    suffix_ar, lcp_ar = pylibsais.sais(seq)
+    #determine maximum length of valid suffixes at each position (should stop at $ and # symbol)
+    mkmer_ar = pylibsais.max_suffix(seq)
+    
+
+    #get all kmers with min_count or more copies
+    #returns no repetitive k-mers, but does return overlapping k-mers
+    kmers = list(pylibsais.kmer_count(seq, suffix_ar, lcp_ar, mkmer_ar, k_min, k_max, min_count))
+    kmers.sort(key=lambda x: (x[0] * x[2]), reverse=True) #sort on length * count, so that kmers that mask longer sequences are first
+
+    #print(f'KMER CANDIDATES: {len(kmers)}')
+    #for kmer_len, kmer_idx, kmer_cnt in kmers:
+    #    print(f"- {get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len)}: {kmer_cnt} copies of length {kmer_len}")
+    
+    kmers_with_min = []
+    res = []
+    max_continuous_masked_bp = 0
+    evaluated = 0
+    #walk across possible kmers
+    for kmer_len, kmer_idx, kmer_cnt in kmers:
+        kmers_with_min += [{'kmer_len': kmer_len, 'kmer_idx': kmer_idx, 'kmer_cnt':kmer_cnt, 'kmer':get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len), 'min_kmer': pylibsais.min_string(get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len))}]
+
+    for kmer_len, kmer_idx, kmer_cnt in kmers:
+        #stop if we cannot improve on the current best
+        if (kmer_cnt * kmer_len) < max_continuous_masked_bp:
+            break
+
+        
+        #determine how much of the sequence is masked by this kmer
+        total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, kmer_len, kmer_idx, kmer_cnt)
+        evaluated += 1
+
+        #do not report kmer if it is worse than the current best
+        #apply filter constraints (see function parameters)
+        if max_consecutive_count * kmer_len < max_continuous_masked_bp or \
+            max_indiv_seq_count < min_indiv_count or \
+            max_consecutive_count < min_consecutive_count or \
+            max_consecutive_count * kmer_len < min_consecutive_bp:
+            continue
+
+        max_continuous_masked_bp = max_consecutive_count * kmer_len
+
+        #get the kmer sequence
+        kmer_s = get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len)
+        min_kmer = pylibsais.min_string(kmer_s)
+        
+        #get all positions of the kmer in 'seq' (can be overlapping)
+        positions = get_positions(suffix_ar, kmer_idx, kmer_cnt)
+
+        res.append({'kmer':kmer_s, 'min_kmer': min_kmer, 'suffix_cnt': kmer_cnt, 'total_masked': total_masked, 
+                        'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * kmer_len, 'pos':positions, 'idx':kmer_idx})
+    
+    res.sort(key=lambda x: (x['max_consecutive_masked'], x['max_indiv_seq_count'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
+    #res.sort(key=lambda x: (x['max_consecutive_masked'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
+
+    
+    print(f'KMER EVALUATED: {evaluated}')
+    print(f'KMER SELECTED: {len(res)}')
+
+    if len(res) == 0:
+        return ({}, suffix_ar, mkmer_ar, used_kmer)
+
+    else:
+        selected_kmer_object = {}
+        kmer_set_selected = res[0]['min_kmer']
+        min_kmer = res[0]['min_kmer']
+        kmer_set = []
+        if round == 0:
+            if kmer_set_selected in ref_motifs_dict_r:
+                for kmer in kmers_with_min: 
+                    if kmer["kmer"] == ref_motifs_dict_r[kmer_set_selected]:
+                        selected_kmer_object = kmer
+                positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                candidate_kmer = {'kmer':ref_motifs_dict_r[kmer_set_selected], 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+                
+            else:
+                candidate_kmer = res[0]
+
+
+        else:
+            if kmer_set_selected in ref_motifs_dict_r:
+                kmer_selected = ref_motifs_dict_r[kmer_set_selected]
+                for kmer in kmers_with_min:
+                    if kmer['min_kmer'] == kmer_set_selected:
+                        kmer_set += [kmer]
+                
+                for kmer in kmer_set:
+                    if kmer['kmer'] == kmer_selected:
+                        selected_kmer_object = kmer
+                
+                positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
+            
+            else:
+                kmer_selected = select_best_perm_kmer(kmer_set_selected, kmers_with_min, used_kmer)
+            
+                #if seq.index(kmer_selected*2):
+                if kmer_selected*2 in seq:
+                    kmer_set = []
+                    for kmer in kmers_with_min:
+                        if kmer['min_kmer'] == kmer_set_selected:
+                            kmer_set += [kmer]
+                    
+                    for kmer in kmer_set:
+                        if kmer['kmer'] == kmer_selected:
+                            selected_kmer_object = kmer
+
+                    positions = get_positions(suffix_ar, selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                    total_masked, max_indiv_seq_count, max_consecutive_count = pylibsais.kmer_mask_potential(suffix_ar, mkmer_ar, index, selected_kmer_object['kmer_len'], selected_kmer_object['kmer_idx'], selected_kmer_object['kmer_cnt'])
+                    candidate_kmer = {'kmer':kmer_selected, 'min_kmer': min_kmer, 'suffix_cnt': selected_kmer_object['kmer_cnt'], 'total_masked': total_masked, 
+                                    'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * selected_kmer_object['kmer_len'], 'pos':positions, 'idx':selected_kmer_object['kmer_idx']}
                 else:
-                    all_seq_masked_dict = {**all_seq_masked_dict, **one_kmer_masked}
-                seq_list = [x.split("x") for x in seq_to_be_masked.values()]
-                seq_list = [item for sublist in seq_list for item in sublist]
-                with open (output_fasta, 'w') as output_fasta_file:
-                    for seq in seq_to_be_masked:
-                        output_fasta_file.write(">" + seq + "\n")
-                        output_fasta_file.write(seq_to_be_masked[seq] + "\n")
-                max_k = min([max_k, max([len(x) for x in seq_list])])
-                n += 1
-    
-    os.system("rm %s" %(output_fasta))
-    all_seq_masked_sporadic_seq = {}
-    selected_kmer_list = sorted(selected_kmer_list, key = len, reverse = True)
-    print("finding unconsecutive motifs")
-    sporadic_motifs = {}
-    all_seq_masked_sporadic_seq = {}
-    for seq in seq_to_be_masked:
-        sporadic_motifs[seq] = find_sporadic(seq_to_be_masked[seq], selected_kmer_list)
+                    candidate_kmer = res[0]
 
-        seq_to_be_masked[seq], masked_region = sporadic_mask_seq_new(seq_to_be_masked[seq], seq, sporadic_motifs[seq])
-        all_seq_masked_sporadic_seq = {**all_seq_masked_sporadic_seq, **masked_region}
+        used_kmer += [candidate_kmer['kmer']]
 
-    
-    return all_seq_masked_dict, all_seq_masked_sporadic_seq
+        return (candidate_kmer, suffix_ar, mkmer_ar, used_kmer)
 
-def mask_all_seq_ref_motif(input_fasta, min_k, max_k, ref_motifs_list):
+
+def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
     ref_motifs_dict = {}
     for motif in ref_motifs_list:
         ref_motifs_dict[motif] = min([motif[x:] + motif[:x] for x in range(len(motif))])
     ref_motifs_dict_r = {value: key for key, value in ref_motifs_dict.items()}
+
+    #seq, index= prepare_suffix_string(sequence_dict)
+
+    #kmers that are selected
+    selected_kmers = []
+
+    #positions that are masked (list of tuples of position and kmer)
+    marked_positions = []
+
+    used_kmer = []
     n = 0
-    all_seq = parse_fasta(input_fasta)
-    seq_to_be_masked = all_seq.copy()
-    seq_list = [str(seq) for seq in all_seq.values()]
-    selected_kmer_list = []
-    all_seq_masked_dict = {}
-    output_fasta = input_fasta.replace(".fa", ".tmp.fa")
-    os.system("cp %s %s" %(input_fasta, output_fasta))
-    #while max([len(x) for x in seq_list]) != 1:
-    while max([len(x) for x in seq_list]) >= min_k:
-        print("counting kmer")
-        all_seq_dict = parse_fasta(output_fasta)
-        kmer_counts = count_all_kmers_multi(all_seq_dict, output_fasta, min_k, max_k)
-        print("selecting kmer")
-        kmer_set_all_seq = kmer_selection(all_seq_dict, kmer_counts)
-        if len(kmer_set_all_seq) == 0:
+    #repeat until no (consequtive) kmers are found
+    while True:    
+        res, sa, mask, used_kmer = select_best_kmers_motif_guided(mink, maxk, seq, index, used_kmer, n, ref_motifs_dict_r)
+        #res, sa, mask = select_best_kmers(2, 30, seq, index)
+        
+        if res == {}:
             break
-        else:
-            selected_kmer = kmer_set_all_seq[0]
-            if len(selected_kmer.kmer) == 1:
-                break
-            else: 
-                if n == 0:
-                    if selected_kmer.kmer in ref_motifs_dict_r:
-                        kmer = ref_motifs_dict_r[selected_kmer.kmer]
-                    else:
-                        sum_max_perm_kmer_region = {}
-                        for kmer_region in selected_kmer.max_kmer_mask:
-                            if kmer_region[1] in sum_max_perm_kmer_region:
-                                sum_max_perm_kmer_region[kmer_region[1]] += selected_kmer.max_kmer_mask[kmer_region]
-                            else:
-                                sum_max_perm_kmer_region[kmer_region[1]] = selected_kmer.max_kmer_mask[kmer_region]
-                        kmer = sorted(sum_max_perm_kmer_region, key = sum_max_perm_kmer_region.get, reverse = True)[0]
-                else:
-                    if selected_kmer.kmer in ref_motifs_dict_r:
-                        kmer = ref_motifs_dict_r[selected_kmer.kmer]
-                    else:
-                        #logging.debug("getting best perm kmer")
-                        kmer = get_best_perm_kmer(selected_kmer, selected_kmer_list)
-                        #logging.debug("best kmer selected")
-                #logging.debug(kmer)
-                print(kmer)
-                selected_kmer_list += [kmer]
-                one_kmer_masked = {}
-                for region in selected_kmer.max_kmer_mask:
-                    if region[1] == kmer:
-                        if selected_kmer.max_kmer_mask[region] != 0:
-                            seq_to_be_masked[region[0]], masked_region = consecutive_mask_seq(seq_to_be_masked[region[0]], region[0], kmer, selected_kmer)
-                            one_kmer_masked = {**one_kmer_masked, **masked_region}
-                        
-                if all(value == [] for value in one_kmer_masked.values()):
-                    break
-                
-                else:
-                    all_seq_masked_dict = {**all_seq_masked_dict, **one_kmer_masked}
-                seq_list = [x.split("x") for x in seq_to_be_masked.values()]
-                seq_list = [item for sublist in seq_list for item in sublist]
-                with open (output_fasta, 'w') as output_fasta_file:
-                    for seq in seq_to_be_masked:
-                        output_fasta_file.write(">" + seq + "\n")
-                        output_fasta_file.write(seq_to_be_masked[seq] + "\n")
+        
+        selected = res
+        #selected = res[0]
+        selected_kmers.append(selected) 
+
+        print(f"SELECT KMER: {selected['kmer']}")
+        for k,v in selected.items():
+            if k != 'kmer':
+                print(f"- {k}: {v}")
+        
+        print('MASKED:')
+        rseq, rmarked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '.')
+        print(rseq)
+        print('\n' * 2)
+        '''        if(rseq.count('.') == 0):
+            kmer = selected['kmer'] * 2
+            #kmer = selected['kmer']
+            idx = rseq.index(kmer)
+            raise RuntimeError('No masked positions found')'''
+
+        if(rseq.count('.') == 0):
+            kmer = selected['kmer']
+            #kmer = selected['kmer']
+            #idx = rseq.index(kmer)
+            if rseq.index(kmer):
+                seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+                marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
                 n += 1
+                continue
+            else:
+                raise RuntimeError('No masked positions found')
+        #mask sequence with # symbol. The '2' indicates that only stretches of at least 2 consecutive kmers are masked.
+        seq, marked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+        n += 1
 
-    os.system("rm %s" %(output_fasta))
-    all_seq_masked_sporadic_seq = {}
-    selected_kmer_list = list(set(selected_kmer_list + ref_motifs_list))
-    selected_kmer_list = sorted(selected_kmer_list, key = len, reverse = True)
-    print("finding unconsecutive motifs")
-    sporadic_motifs = {}
-    all_seq_masked_sporadic_seq = {}
-    for seq in seq_to_be_masked:
-        sporadic_motifs[seq] = find_sporadic(seq_to_be_masked[seq], selected_kmer_list)
+        #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer'])) 
+    for ref in ref_motifs_list:
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
+        if marked_pos != []:
+            print(ref)
+            marked_positions.extend([(e, ref) for e in marked_pos])
+            if selected_kmers not in selected_kmers:
+                selected_kmers += [{'kmer': ref}]
 
-        seq_to_be_masked[seq], masked_region = sporadic_mask_seq_new(seq_to_be_masked[seq], seq, sporadic_motifs[seq])
-        all_seq_masked_sporadic_seq = {**all_seq_masked_sporadic_seq, **masked_region}
 
-    return all_seq_masked_dict, all_seq_masked_sporadic_seq
+    for selected in selected_kmers:
+        #print(f"MASK KMER: {selected['kmer']}")
+        #print('MASKED:')
+        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
+        #print('\n' * 2)
+        #mask sequence with # symbol
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+           
+    return selected_kmers, marked_positions, seq
 
-def tag_all_seq(all_seq, all_seq_masked_dict, all_seq_masked_sporadic_seq):
-    seq_df = pd.DataFrame()
-    for seq in all_seq:
-        seq_array = pd.DataFrame(list(str(all_seq[seq])), columns = [seq])
-        masked_region_one_seq = [all_seq_masked_dict[region] for region in all_seq_masked_dict if region[0] == seq]
-        masked_region_one_seq = [item for sublist in masked_region_one_seq for item in sublist]
-        for region in masked_region_one_seq:
-            seq_array.iloc[region[0]:region[1], 0] = region[2]
-        masked_region_one_seq = [all_seq_masked_sporadic_seq[region] for region in all_seq_masked_sporadic_seq if region[0] == seq]
-        masked_region_one_seq = [item for sublist in masked_region_one_seq for item in sublist]
-        for region in masked_region_one_seq:
-            seq_array.iloc[region[0]:region[1], 0] = region[2]
-            
-        seq_df = pd.concat([seq_df, seq_array], axis = 1)
+def mask_all_seq(selected_kmers, marked_positions, seq):
+    '''
+    for selected in selected_kmers:
+        print(f"MASK KMER: {selected['kmer']}")
+        print('MASKED:')
+        print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
+        print('\n' * 2)
+        #mask sequence with # symbol
+        seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
+        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
+    '''
+
+
+    for s in selected_kmers:
+        print(s['kmer'])
+
+    marked_positions.sort(key=lambda x:x[0])
+    #print(marked_positions)
+    return marked_positions
+
+
+def transform_to_df(index, marked_positions, seq_dict):
+    seq_df_list = []
+    n = 0
+    start = 0
+    for seq_key, seq_value in seq_dict.items():
+        seq_array = pd.DataFrame(list(seq_value), columns=[seq_key])
+
+        pos = [(t[0], t[1]) for t in marked_positions if start <= t[0] < index[n]]
+
+        for p in pos:
+            seq_array.iloc[p[0] - start: p[0] - start + len(p[1]), 0] = p[1]
+
+        start = index[n]
+        n += 1
+
+        seq_df_list.append(seq_array)
+
+    seq_df = pd.concat(seq_df_list, axis=1)
     return seq_df
 
 def generate_hex_chr_list():
@@ -562,8 +547,8 @@ def write_seq_in_hex_chr(all_seq_motif_df, motif_dict, input_fasta_file_name, ra
     with open (chr_fasta_file, 'w') as chr_fasta:
         for column in all_seq_motif_df:
             seq_description = column
-            seq_motif_in_chr = all_seq_motif_chr_df[column].dropna()
-            seq_motif = all_seq_motif_df[column].dropna()
+            seq_motif_in_chr = all_seq_motif_chr_df[column].dropna().tolist()
+            seq_motif = all_seq_motif_df[column].dropna().tolist()
             seq_chr = []
             i = 0
             while i < len(seq_motif):
@@ -797,16 +782,23 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
     cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
     cmap2.set_over('none')
 
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
     cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
     
-
-    sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+    sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))}, yticklabels=True)
+   
     all_axes[2].set(ylabel="")
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
-    all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
+    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False, rotation=0)
+    all_axes[2].set_xticks(xticks_positions)
+    all_axes[2].set_xticklabels(xticks_labels, fontsize = 20, rotation=90)
+    #all_axes[2].set_xticklabels(xticks_labels, fontsize = 8)
+    #all_axes[2].set_yticklabels(all_axes[2].get_yticklabels(), size = 5)
+    all_axes[2].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
     all_seq_motifs = all_seq_motifs.transpose()
@@ -818,7 +810,7 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
                 all_axes[2].add_patch(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
                 j += len(all_seq_motifs.iloc[j, i])
             else:
-                break
+                j += 1
 
 
     seq_population = pd.DataFrame({'seq': seq_order_list})
@@ -849,6 +841,7 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
 
 def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    #fig = plt.figure(figsize=(50, 2), dpi = 100)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
@@ -868,14 +861,19 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
     cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
     cmap2.set_over('none')
 
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")    
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 10)  # Adjust to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
-    all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
+    all_axes[1].set_xticks(xticks_positions)
+    all_axes[1].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
+    all_axes[1].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
     all_seq_motifs = all_seq_motifs.transpose()
@@ -888,7 +886,7 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
                 j += len(all_seq_motifs.iloc[j, i])
                 
             else:
-                break
+                j += 1
 
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
@@ -960,9 +958,14 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[2].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[2].set_xticks(xticks_positions)
+    all_axes[2].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
 
     for i in range(df.shape[0]):
         j = 0
@@ -1023,9 +1026,14 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 10) 
+    xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[1].set_xticks(xticks_positions)
+    all_axes[1].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
 
 
     for i in range(df.shape[0]):
@@ -1078,10 +1086,6 @@ parser.add_argument('-p', '--population', default = None, dest='population',
                     metavar="metadata.txt", type=str,
                     help='population metadata file')
 
-parser.add_argument('-a','--aardvark_path', default = 'aardvark', dest='aardvark_path',
-                    metavar="aardvark", type=str,
-                    help='path to aardvark')
-
 parser.add_argument('-ma', '--mafft_path', default = 'mafft', dest='mafft_path',
                     metavar="mafft", type=str,
                     help='path to mafft')
@@ -1089,21 +1093,17 @@ parser.add_argument('-ma', '--mafft_path', default = 'mafft', dest='mafft_path',
 parser.add_argument('-prof', '--profile', action='store_true', dest='profile', default=False,
                      help='Enable profiling (stored in stats.txt)')
 
-
 parser.add_argument('-e', '--embed_motif_method', default='UMAP', dest='embed_motif_method', 
                      help='Embedding method for motif color scale (option: MDS or UMAP), default: MDS')
 
-parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', 
+parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', type = float,
                      help='Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
 
 parser.add_argument('-f', '--format', default='png', dest='format',
                     help='Image output format (png, pdf, ...). Default: png')
+
 sys.getrecursionlimit()
 args = parser.parse_args()
-
-if shutil.which(args.aardvark_path) is None:
-    print(f"Aardvark not found at the specified path '{args.aardvark_path}'. Please provide the correct path to aardvark.")
-    sys.exit(1)
 
 if args.run_msa == "True":
     if not os.path.exists(os.path.join(args.mafft_path, 'hex2maffttext')):
@@ -1118,10 +1118,6 @@ min_kmer_size = args.min_kmer_size
 run_msa = args.run_msa
 motif_guided = args.motif_guided
 ref_motifs = args.ref_motifs
-original_limit = sys.getrecursionlimit()
-
-new_limit = 3000
-sys.setrecursionlimit(new_limit)
 
 if args.profile:
     #imports for profiling
@@ -1135,26 +1131,25 @@ else:
     pool_class = Pool
 
 random_num = str(random()).replace('.', '')
-all_seq = list(SeqIO.parse(input_fasta_to_count, "fasta"))
+#all_seq = list(SeqIO.parse(input_fasta_to_count, "fasta"))
 all_seq_dict = parse_fasta(input_fasta_to_count)
+seq_concat, seq_index = prepare_suffix_string(all_seq_dict)
 
 with pool_class() as pool:
-
     if motif_guided == "False":
-        all_seq_masked, all_seq_masked_sporadic = mask_all_seq(input_fasta_to_count, min_kmer_size, max_kmer_size)
+        candidate_kmer, masked_postion, masked_seq = select_all_kmer(seq_concat, seq_index, min_kmer_size, max_kmer_size, all_seq_dict)
+        
     elif motif_guided == "True":
         with open(ref_motifs, 'r') as ref:
             ref_motifs = ref.readlines()
         ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
         ref_motifs_list = [i for l in ref_motifs_list for i in l]
-        all_seq_masked, all_seq_masked_sporadic = mask_all_seq_ref_motif(input_fasta_to_count, min_kmer_size, max_kmer_size, ref_motifs_list)
+        candidate_kmer, masked_postion, masked_seq = select_all_kmer_motif_guided(seq_concat, seq_index, min_kmer_size, max_kmer_size, ref_motifs_list)
 
-    sys.setrecursionlimit(original_limit)
+        
 
-    all_seq_df = tag_all_seq(all_seq_dict, all_seq_masked, all_seq_masked_sporadic)
-
-    all_seq_masked.clear()
-    all_seq_masked_sporadic.clear()
+    masked_postion = mask_all_seq(candidate_kmer, masked_postion, masked_seq)
+    all_seq_df = transform_to_df(seq_index, masked_postion, all_seq_dict)
 
     unique_motifs = pd.concat([all_seq_df[col] for col in all_seq_df.columns]).unique().tolist()
     if np.nan in unique_motifs:
@@ -1203,3 +1198,8 @@ if args.profile:
         ps.print_callees()
 
 print('DONE')
+        
+
+
+
+
