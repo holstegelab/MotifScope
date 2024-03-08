@@ -30,6 +30,10 @@ python motifscope.py --sequence-type reads [-i input.fa] [-mink 2] [-maxk 10] [-
 ```bash
 python motifscope.py --sequence-type assembly [-i input.fa] [-mink 2] [-maxk 10] [-t title] [-p population.txt]
 ```
+- For running MotifScope on a single sequence:
+```bash
+python motifscope.py --sequence-type single [-i input.fa] [-mink 2] [-maxk 10] [-t title] 
+```
 The description of the sequences in ```input.fa``` should start with ```>sample_name#```. <br>
 The population file ```population.txt``` should be a tab separated file with the first column being the sample names and the second column being the population. 
 
