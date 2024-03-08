@@ -1049,17 +1049,59 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     plt.yticks(rotation=0)
     plt.savefig(figname, bbox_inches = "tight")
 
+def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), 1), dpi = 300)
+    #fig = plt.figure(figsize=(50, 2), dpi = 100)
+    spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[40,5], height_ratios=[1], wspace=0.02)
+
+    for col in range(1):
+        axs = fig.add_subplot(spec[0, col])
+    all_axes = fig.get_axes()    
+
+    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
+    cmap2.set_over('none')
+
+    cbar_ax = fig.add_axes([0.95, .2, .02, .6], title="motif")    
+
+    sns.heatmap(df, cmap=cmap2, ax=all_axes[0], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+    all_axes[0].set(ylabel="")
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust to your desired interval
+    xticks_labels = [str(x) for x in xticks_positions]
+    all_axes[0].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[0].set_xticks(xticks_positions)
+    all_axes[0].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
+    all_axes[0].tick_params(axis ='x', which ='major')
+    cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
+    all_seq_motifs = all_seq_motifs.transpose()
+    
+    i = 0
+    j = 0
+    while j < all_seq_motifs.shape[0]:
+        if str(all_seq_motifs.iloc[j, i]) != "nan":
+            all_axes[0].add_patch(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
+            j += len(all_seq_motifs.iloc[j, i])
+            
+        else:
+            j += 1
+
+    all_axes[0].title.set_text(figtitle)
+    plt.yticks(rotation=0)
+    plt.savefig(figname, bbox_inches = "tight")
+
+
 #######################
 
 
 parser = argparse.ArgumentParser(description='MotifScope')
-parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads]",
-                    help='type of input sequences [assembly / reads].', type = str,
+parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads / single]",
+                    help='type of input sequences [assembly / reads / single].', type = str,
                     required=True)
 
 parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count',
                     metavar="input.fa", type=str,
-                    help='input fasta file to count')
+                    help='input fasta file to analyze')
 
 parser.add_argument('-mink', '--min_kmer', default = 2, dest='min_kmer_size',
                     metavar=2, type=int,
@@ -1094,7 +1136,7 @@ parser.add_argument('-prof', '--profile', action='store_true', dest='profile', d
                      help='Enable profiling (stored in stats.txt)')
 
 parser.add_argument('-e', '--embed_motif_method', default='UMAP', dest='embed_motif_method', 
-                     help='Embedding method for motif color scale (option: MDS or UMAP), default: MDS')
+                     help='Embedding method for motif color scale (option: MDS or UMAP), default: UMAP')
 
 parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', type = float,
                      help='Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
@@ -1186,6 +1228,11 @@ with pool_class() as pool:
         elif run_msa == "False":
             df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
             plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + f".{args.format}"), title)
+    
+    elif sequence_type == "single":
+        df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+        plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + f".{args.format}"), title)
+
 
 if args.profile:
     pr.disable()
