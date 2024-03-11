@@ -5,7 +5,8 @@ import argparse
 import sys
 import shutil
 
-from Bio import SeqIO, pairwise2
+from Bio import SeqIO
+from Bio import Align
 from Bio.Seq import Seq
 from multiprocess import Pool
 from itertools import repeat, combinations_with_replacement, groupby
@@ -70,8 +71,15 @@ def get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len):
     return seq[xloc:xloc+kmer_len]
 
 def pairwise_alignment(seq1, seq2):
-    from Bio import pairwise2
-    alignments = pairwise2.align.globalms(seq1, seq2, 0, -2, -5, -5)
+    aligner = Align.PairwiseAligner()
+    aligner.mode = 'global'
+    aligner.match_score = 0
+    aligner.mismatch_score = -2
+    aligner.open_gap_score = -5
+    aligner.extend_gap_score = -5
+    aligner.target_end_gap_score = 0.0
+    aligner.query_end_gap_score = 0.0
+    alignments = aligner.align(seq1, seq2)
     scores = []
     for alignment in alignments:
         scores.append(alignment.score)
