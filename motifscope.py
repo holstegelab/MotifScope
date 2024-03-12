@@ -3,15 +3,12 @@ import numpy as np
 import os
 import argparse
 import sys
-import shutil
 
 from Bio import SeqIO
 from Bio import Align
-from Bio.Seq import Seq
 from multiprocess import Pool
-from itertools import repeat, combinations_with_replacement, groupby
+from itertools import combinations_with_replacement, groupby
 
-import math
 import umap
 import copy
 
@@ -19,18 +16,14 @@ import seaborn as sns
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
-#import matplotlib.gridspec as gridspec
 
 from random import random
 
 import scipy.cluster.hierarchy as shc
 from scipy.spatial.distance import squareform
-from scipy.stats import rankdata
 
 import Levenshtein
 import binascii
-#import logging
-from suffix_tree import Tree
 import pylibsais
 
 
@@ -693,57 +686,62 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
        :rank: float, between 0 and 1. Transforms between original embedding (0.0) and a fully ranked embedding (1.0, i.e. only the ordering of the motifs is preserved).
        :norm: bool, whether to normalize the distance matrix by the geometric mean of the sequence lengths.
     """
-    n_neighbors = min(10,max(5,dm.shape[0]/2)) # 10 or half of the number of motifs, whichever is smaller, with a minimum of 5
-    n_neighbors = int(min(n_neighbors,dm.shape[0])) # cannot be larger than the number of motifs
-
-    data = (-dm).to_numpy(copy=True,dtype=np.float32)
-
-    if norm:
-        dnorm = [len(e) for e in dm.index]
-        snorm = np.sqrt(dnorm)
-        data = data / (snorm[:,np.newaxis] * snorm[np.newaxis,:])
-    
-    if method == 'UMAP':
-        #UMAP has a lot of overhead for small N.
-        #This is much faster than builtin method for finding nearest neighbors for small N
-        if n_neighbors * 5 < dm.shape[0]: #top-k sort for very large motif sets
-            idx = np.argpartition(data,np.arange(n_neighbors),axis=1)[:,:n_neighbors]
-            dist = np.take_along_axis(data,idx,axis=1)
-        else:
-            idx = np.argsort(data,axis=1)[:,:n_neighbors]
-            dist = np.take_along_axis(data,idx,axis=1)
-        
-        #NN-descent only needed for transform of new data (https://github.com/lmcinnes/umap/issues/848)
-        import pynndescent
-        class DummyNNDescent(pynndescent.NNDescent):
-            def __init__(self):
-                return
-        precomputed_knn = (idx,dist, DummyNNDescent())
-    
-        manifold_f = umap.UMAP(n_components = 1, metric = "precomputed", n_neighbors = n_neighbors, min_dist = 0.5, random_state = 0, precomputed_knn=precomputed_knn, force_approximation_algorithm=True)
-
-
-    elif method=="MDS":
-        from sklearn.manifold import MDS
-        manifold_f = MDS(n_components=1, n_init=50, metric=False, dissimilarity='precomputed')
+    if alignment_score_matrix.shape[0] == 1:
+        X_transform_L2 = pd.DataFrame(columns = ["dimension_reduction", "motifs"])
+        X_transform_L2["motif"] = dm.columns
+        X_transform_L2["dimension_reduction"] = 0
     else:
-        raise RuntimeError(f'Unknown manifold method {method}. Choose UMAP or MDS.')
-   
-    result = manifold_f.fit_transform(data) 
-    
-    if rank:
-        result = result.ravel()
-        idx = np.argsort(result)
-        df =np.diff(result[idx])
-        r = np.max(result) - np.min(result)
-        w = np.cumsum(df * (1 - rank) + rank * (r / (dm.shape[0] - 1)))
-        result[idx[1:]] = w
-        result[idx[0]] = 0.0
+        n_neighbors = min(10,max(5,dm.shape[0]/2)) # 10 or half of the number of motifs, whichever is smaller, with a minimum of 5
+        n_neighbors = int(min(n_neighbors,dm.shape[0])) # cannot be larger than the number of motifs
 
-    X_transform_L2 = pd.DataFrame(result)
-    X_transform_L2.columns = ["dimension_reduction"]
-    X_transform_L2["motif"] = dm.index
-    X_transform_L2 = X_transform_L2.astype({"dimension_reduction": float})
+        data = (-dm).to_numpy(copy=True,dtype=np.float32)
+
+        if norm:
+            dnorm = [len(e) for e in dm.index]
+            snorm = np.sqrt(dnorm)
+            data = data / (snorm[:,np.newaxis] * snorm[np.newaxis,:])
+        
+        if method == 'UMAP':
+            #UMAP has a lot of overhead for small N.
+            #This is much faster than builtin method for finding nearest neighbors for small N
+            if n_neighbors * 5 < dm.shape[0]: #top-k sort for very large motif sets
+                idx = np.argpartition(data,np.arange(n_neighbors),axis=1)[:,:n_neighbors]
+                dist = np.take_along_axis(data,idx,axis=1)
+            else:
+                idx = np.argsort(data,axis=1)[:,:n_neighbors]
+                dist = np.take_along_axis(data,idx,axis=1)
+            
+            #NN-descent only needed for transform of new data (https://github.com/lmcinnes/umap/issues/848)
+            import pynndescent
+            class DummyNNDescent(pynndescent.NNDescent):
+                def __init__(self):
+                    return
+            precomputed_knn = (idx,dist, DummyNNDescent())
+        
+            manifold_f = umap.UMAP(n_components = 1, metric = "precomputed", n_neighbors = n_neighbors, min_dist = 0.5, random_state = 0, precomputed_knn=precomputed_knn, force_approximation_algorithm=True)
+
+
+        elif method=="MDS":
+            from sklearn.manifold import MDS
+            manifold_f = MDS(n_components=1, n_init=50, metric=False, dissimilarity='precomputed')
+        else:
+            raise RuntimeError(f'Unknown manifold method {method}. Choose UMAP or MDS.')
+    
+        result = manifold_f.fit_transform(data) 
+        
+        if rank:
+            result = result.ravel()
+            idx = np.argsort(result)
+            df =np.diff(result[idx])
+            r = np.max(result) - np.min(result)
+            w = np.cumsum(df * (1 - rank) + rank * (r / (dm.shape[0] - 1)))
+            result[idx[1:]] = w
+            result[idx[0]] = 0.0
+
+        X_transform_L2 = pd.DataFrame(result)
+        X_transform_L2.columns = ["dimension_reduction"]
+        X_transform_L2["motif"] = dm.index
+        X_transform_L2 = X_transform_L2.astype({"dimension_reduction": float})
 
     return X_transform_L2
 
@@ -1081,8 +1079,6 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     all_axes[0].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
     all_axes[0].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
-    
-    all_seq_motifs = all_seq_motifs.transpose()
     
     i = 0
     j = 0
