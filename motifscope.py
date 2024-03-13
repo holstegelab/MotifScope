@@ -18,7 +18,6 @@ from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
 
 from random import random
-
 import scipy.cluster.hierarchy as shc
 from scipy.spatial.distance import squareform
 
@@ -113,15 +112,7 @@ def select_best_kmers(k_min, k_max, seq, index, used_kmer, round, min_count=2, m
     kmers = list(pylibsais.kmer_count(seq, suffix_ar, lcp_ar, mkmer_ar, k_min, k_max, min_count))
     kmers.sort(key=lambda x: (x[0] * x[2]), reverse=True) #sort on length * count, so that kmers that mask longer sequences are first
 
-    #print(f'KMER CANDIDATES: {len(kmers)}')
-    #for kmer_len, kmer_idx, kmer_cnt in kmers:
-    #    print(f"- {get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len)}: {kmer_cnt} copies of length {kmer_len}")
-    
     kmers_with_min = []
-    '''
-    for kmer_len, kmer_idx, kmer_cnt in kmers:
-        kmers_with_min += [{'kmer_len': kmer_len, 'kmer_idx': kmer_idx, 'kmer_cnt':kmer_cnt, 'kmer':get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len), 'min_kmer': pylibsais.min_string(get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len))}]
-    '''
     res = []
     max_continuous_masked_bp = 0
     evaluated = 0
@@ -159,7 +150,6 @@ def select_best_kmers(k_min, k_max, seq, index, used_kmer, round, min_count=2, m
                         'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * kmer_len, 'pos':positions, 'idx':kmer_idx})
     
     res.sort(key=lambda x: (x['max_consecutive_masked'], x['max_indiv_seq_count'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
-    #res.sort(key=lambda x: (x['max_consecutive_masked'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
 
     
     print(f'KMER EVALUATED: {evaluated}')
@@ -204,8 +194,7 @@ def select_best_kmers(k_min, k_max, seq, index, used_kmer, round, min_count=2, m
 
 
 
-def select_all_kmer(seq, index, mink, maxk, sequence_dict):
-    #seq, index= prepare_suffix_string(sequence_dict)
+def select_all_kmer(seq, index, mink, maxk):
 
     #kmers that are selected
     selected_kmers = []
@@ -218,13 +207,11 @@ def select_all_kmer(seq, index, mink, maxk, sequence_dict):
     #repeat until no (consequtive) kmers are found
     while True:    
         res, sa, mask, used_kmer = select_best_kmers(mink, maxk, seq, index, used_kmer, n)
-        #res, sa, mask = select_best_kmers(2, 30, seq, index)
         
         if res == {}:
             break
         
         selected = res
-        #selected = res[0]
         selected_kmers.append(selected) 
 
         print(f"SELECT KMER: {selected['kmer']}")
@@ -246,14 +233,8 @@ def select_all_kmer(seq, index, mink, maxk, sequence_dict):
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
         n += 1
 
-        #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer']))
     
     for selected in selected_kmers:
-        #print(f"MASK KMER: {selected['kmer']}")
-        #print('MASKED:')
-        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
-        #print('\n' * 2)
-        #mask sequence with # symbol
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
 
@@ -284,10 +265,7 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
     kmers = list(pylibsais.kmer_count(seq, suffix_ar, lcp_ar, mkmer_ar, k_min, k_max, min_count))
     kmers.sort(key=lambda x: (x[0] * x[2]), reverse=True) #sort on length * count, so that kmers that mask longer sequences are first
 
-    #print(f'KMER CANDIDATES: {len(kmers)}')
-    #for kmer_len, kmer_idx, kmer_cnt in kmers:
-    #    print(f"- {get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len)}: {kmer_cnt} copies of length {kmer_len}")
-    
+
     kmers_with_min = []
     res = []
     max_continuous_masked_bp = 0
@@ -327,8 +305,6 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
                         'max_indiv_seq_count':max_indiv_seq_count, 'max_consecutive_masked':max_consecutive_count * kmer_len, 'pos':positions, 'idx':kmer_idx})
     
     res.sort(key=lambda x: (x['max_consecutive_masked'], x['max_indiv_seq_count'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
-    #res.sort(key=lambda x: (x['max_consecutive_masked'], x['total_masked'], len(x['kmer']), x['kmer']), reverse=True)
-
     
     print(f'KMER EVALUATED: {evaluated}')
     print(f'KMER SELECTED: {len(res)}')
@@ -373,8 +349,7 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
             
             else:
                 kmer_selected = select_best_perm_kmer(kmer_set_selected, kmers_with_min, used_kmer)
-            
-                #if seq.index(kmer_selected*2):
+
                 if kmer_selected*2 in seq:
                     kmer_set = []
                     for kmer in kmers_with_min:
@@ -403,8 +378,6 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
         ref_motifs_dict[motif] = min([motif[x:] + motif[:x] for x in range(len(motif))])
     ref_motifs_dict_r = {value: key for key, value in ref_motifs_dict.items()}
 
-    #seq, index= prepare_suffix_string(sequence_dict)
-
     #kmers that are selected
     selected_kmers = []
 
@@ -416,13 +389,11 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
     #repeat until no (consequtive) kmers are found
     while True:    
         res, sa, mask, used_kmer = select_best_kmers_motif_guided(mink, maxk, seq, index, used_kmer, n, ref_motifs_dict_r)
-        #res, sa, mask = select_best_kmers(2, 30, seq, index)
         
         if res == {}:
             break
         
         selected = res
-        #selected = res[0]
         selected_kmers.append(selected) 
 
         print(f"SELECT KMER: {selected['kmer']}")
@@ -434,16 +405,9 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
         rseq, rmarked_pos = pylibsais.kmer_mask(seq, sa, mask, len(selected['kmer']), selected['idx'], selected['suffix_cnt'], 2, '.')
         print(rseq)
         print('\n' * 2)
-        '''        if(rseq.count('.') == 0):
-            kmer = selected['kmer'] * 2
-            #kmer = selected['kmer']
-            idx = rseq.index(kmer)
-            raise RuntimeError('No masked positions found')'''
 
         if(rseq.count('.') == 0):
             kmer = selected['kmer']
-            #kmer = selected['kmer']
-            #idx = rseq.index(kmer)
             if rseq.index(kmer):
                 seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
                 marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
@@ -456,7 +420,6 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
         n += 1
 
-        #seq = seq.replace(selected['kmer'], '#' * len(selected['kmer'])) 
     for ref in ref_motifs_list:
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, ref, '#')
         if marked_pos != []:
@@ -467,10 +430,6 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
 
 
     for selected in selected_kmers:
-        #print(f"MASK KMER: {selected['kmer']}")
-        #print('MASKED:')
-        #print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
-        #print('\n' * 2)
         #mask sequence with # symbol
         seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
         marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
@@ -478,23 +437,10 @@ def select_all_kmer_motif_guided(seq, index, mink, maxk, ref_motifs_list):
     return selected_kmers, marked_positions, seq
 
 def mask_all_seq(selected_kmers, marked_positions, seq):
-    '''
-    for selected in selected_kmers:
-        print(f"MASK KMER: {selected['kmer']}")
-        print('MASKED:')
-        print(pylibsais.kmer_mask_simple(seq, selected['kmer'], '.'))
-        print('\n' * 2)
-        #mask sequence with # symbol
-        seq, marked_pos = pylibsais.kmer_mask_simple(seq, selected['kmer'], '#')
-        marked_positions.extend([(e, selected['kmer']) for e in marked_pos])
-    '''
-
-
     for s in selected_kmers:
         print(s['kmer'])
 
     marked_positions.sort(key=lambda x:x[0])
-    #print(marked_positions)
     return marked_positions
 
 
@@ -530,13 +476,12 @@ def generate_hex_chr_list():
     usable_hex = ['{:02x}'.format(x) for x in usable_hex]
     return usable_hex
 
-def assign_chr_to_motif(all_unique_motif, printable_asii, input_fasta_file_name):
+def assign_chr_to_motif(all_unique_motif, printable_asii):
     if len(all_unique_motif) > len(printable_asii):
         return None, "too many motifs"        
     else:
         printable_asii_to_include = printable_asii[:len(all_unique_motif)]
         motif_dict = dict(zip(all_unique_motif, printable_asii_to_include))
-        #pd.DataFrame(motif_dict.items(), columns=['motif', 'ascii']).to_csv(input_fasta_file_name.replace(".fa", "_motif_to_ascii.txt"), sep = "\t", index = False)
         return motif_dict
 
 
@@ -748,7 +693,7 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
 def map_score_to_alignment(all_seq_motifs, X_transform_L2):
     motif_dict = dict(zip(X_transform_L2.motif, map(float, X_transform_L2.dimension_reduction)))
     motif_dict['nan'] = np.nan
-    df = all_seq_motifs.applymap(lambda x: motif_dict[str(x)])
+    df = all_seq_motifs.map(lambda x: motif_dict[str(x)])
     return df.transpose()
 
 def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_distance_df, figtitle):
@@ -847,7 +792,6 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
 
 def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
-    #fig = plt.figure(figsize=(50, 2), dpi = 100)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
@@ -937,7 +881,6 @@ def prepare_for_plotting(msa_result, motif_dict, dm):
     
 
 def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, population_df, max_motif_length):
-
     fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.01)
 
@@ -1057,7 +1000,6 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
 def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), 1), dpi = 300)
-    #fig = plt.figure(figsize=(50, 2), dpi = 100)
     spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(1):
@@ -1167,7 +1109,7 @@ ref_motifs = args.ref_motifs
 
 if args.profile:
     #imports for profiling
-    import cProfile, pstats, io
+    import cProfile, pstats
     from pstats import SortKey
     print('Profiling enabled. MultiProcessing disabled.')
     pr = cProfile.Profile()
@@ -1183,7 +1125,7 @@ seq_concat, seq_index = prepare_suffix_string(all_seq_dict)
 
 with pool_class() as pool:
     if motif_guided == "False":
-        candidate_kmer, masked_postion, masked_seq = select_all_kmer(seq_concat, seq_index, min_kmer_size, max_kmer_size, all_seq_dict)
+        candidate_kmer, masked_postion, masked_seq = select_all_kmer(seq_concat, seq_index, min_kmer_size, max_kmer_size)
         
     elif motif_guided == "True":
         with open(ref_motifs, 'r') as ref:
@@ -1202,7 +1144,7 @@ with pool_class() as pool:
         unique_motifs.remove(np.nan)
 
     printable_asii_list = generate_hex_chr_list()
-    motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list, input_fasta_to_count)
+    motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list)
     all_seq_chr_dict = write_seq_in_hex_chr(all_seq_df, motif_chr_dict, input_fasta_to_count, random_num)
     write_compressed_seq(all_seq_chr_dict, motif_chr_dict, input_fasta_to_count, random_num)
 
