@@ -818,7 +818,7 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
 
     sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 10)  # Adjust to your desired interval
+    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust to your desired interval
     xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
     all_axes[1].set_xticks(xticks_positions)
@@ -846,9 +846,9 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
 
 def msa_with_characters(input_fasta_file_name, random_num):
     chr_fasta_file = input_fasta_file_name.replace(".fa", "_motif_in_hex_" + str(random_num) + ".hex")
-    os.system(f"{args.mafft_path}/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
+    os.system(f"{mafft_path}/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
     os.system(f"mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
-    os.system(f"{args.mafft_path}/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
+    os.system(f"{mafft_path}/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
     msa_result = list(SeqIO.parse(chr_fasta_file.replace(".hex", "_mafft_output.hex"), "fasta"))
     os.system("rm %s" %(chr_fasta_file.replace(".hex", ".ASCII")))
     os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
@@ -1041,25 +1041,25 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
 
 
 parser = argparse.ArgumentParser(description='MotifScope')
-parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads / single]",
-                    help='type of input sequences [assembly / reads / single].', type = str,
-                    required=True)
+parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads / single]", 
+                    help ='type of input sequences [assembly / reads / single].', type = str,
+                    required = True)
 
-parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count',
-                    metavar="input.fa", type=str,
-                    help='input fasta file to analyze')
+parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count', required = True, 
+                    metavar = "input.fa", type = str,
+                    help ='input fasta file to analyze')
 
-parser.add_argument('-mink', '--min_kmer', default = 2, dest='min_kmer_size',
-                    metavar=2, type=int,
-                    help='minimum k to count')
+parser.add_argument('-mink', '--min_kmer', default = 2, dest = 'min_kmer_size',
+                    metavar = 2, type = int,
+                    help ='minimum k to count')
 
 parser.add_argument('-maxk', '--max_kmer', default = 10, dest='max_kmer_size',
                     metavar=10, type=int,
-                    help='maximum k to count')
+                    help ='maximum k to count')
 
 parser.add_argument('-t', '--title', default = None, dest='title',
-                    metavar="title", type=str,
-                    help='title of the plot')
+                    metavar = "title", type=str,
+                    help ='title of the plot')
 
 parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, metavar = "False",
                     help = 'Boolean (True/False).', default = 'False')
@@ -1070,34 +1070,37 @@ parser.add_argument('-m', '--m', dest = 'motif_guided', type = str, metavar = "F
 parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
                     help = 'file with ref motifs separated by tabs.', metavar = 'motifs.txt')
 
-parser.add_argument('-p', '--population', default = None, dest='population',
-                    metavar="metadata.txt", type=str,
-                    help='population metadata file')
+parser.add_argument('-p', '--population', dest = 'population', required = False, 
+                    metavar = "metadata.txt", type=str,
+                    help = 'population metadata file')
 
-parser.add_argument('-ma', '--mafft_path', default = 'mafft', dest='mafft_path',
-                    metavar="mafft", type=str,
-                    help='path to mafft')
+parser.add_argument('-mp', '--mafft_path', default = None, dest = 'mafft_path', required = False, 
+                    metavar = "mafft", type=str,
+                    help = 'path to mafft, default: $PREFIX_CONDA/libexec/mafft')
 
-parser.add_argument('-prof', '--profile', action='store_true', dest='profile', default=False,
-                     help='Enable profiling (stored in stats.txt)')
+parser.add_argument('-prof', '--profile', action = 'store_true', dest = 'profile', default = False,
+                     help = 'Enable profiling (stored in stats.txt)')
 
-parser.add_argument('-e', '--embed_motif_method', default='UMAP', dest='embed_motif_method', 
-                     help='Embedding method for motif color scale (option: MDS or UMAP), default: UMAP')
+parser.add_argument('-e', '--embed_motif_method', default = 'UMAP', dest= 'embed_motif_method', 
+                     help = 'Embedding method for motif color scale (option: MDS or UMAP), default: UMAP')
 
-parser.add_argument('-r', '--motif_rank_embed', default=0.5, dest='motif_rank_embed', type = float,
-                     help='Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
+parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_rank_embed', type = float,
+                     help = 'Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
 
-parser.add_argument('-f', '--format', default='png', dest='format',
-                    help='Image output format (png, pdf, ...). Default: png')
+parser.add_argument('-f', '--format', default = 'png', dest = 'format',
+                    help = 'Image output format (png, pdf, ...). Default: png')
 
 sys.getrecursionlimit()
 args = parser.parse_args()
 
 if args.run_msa == "True":
-    if not os.path.exists(os.path.join(args.mafft_path, 'hex2maffttext')):
-        print(f"Mafft binary hex2maffttext not found within the specified folder '{args.mafft_path}'. Please provide the correct path to mafft binaries.")
+    mafft_path = os.path.join(os.getenv('CONDA_PREFIX'), 'libexec', 'mafft')
+    if not os.path.exists(os.path.join(mafft_path, 'hex2maffttext')):
+        print(f"Mafft binary hex2maffttext not found within the specified folder '{mafft_path}'. Please provide the correct path to mafft binaries with -mp.")
         sys.exit(1)
 
+if args.mafft_path != None:
+    mafft_path = args.mafft_path
 title = args.title
 sequence_type = args.sequence_type
 input_fasta_to_count = args.input_fasta_to_count
