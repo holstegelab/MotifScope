@@ -1042,24 +1042,24 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
 
 parser = argparse.ArgumentParser(description='MotifScope')
 parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads / single]", 
-                    help ='type of input sequences [assembly / reads / single].', type = str,
+                    help ='Type of input sequences [assembly / reads / single].', type = str,
                     required = True)
 
 parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count', required = True, 
                     metavar = "input.fa", type = str,
-                    help ='input fasta file to analyze')
+                    help ='Input fasta file to analyze')
 
 parser.add_argument('-mink', '--min_kmer', default = 2, dest = 'min_kmer_size',
                     metavar = 2, type = int,
-                    help ='minimum k to count')
+                    help ='Minimum k to count')
 
 parser.add_argument('-maxk', '--max_kmer', default = 10, dest='max_kmer_size',
                     metavar=10, type=int,
-                    help ='maximum k to count')
+                    help ='Maximum k to count')
 
 parser.add_argument('-t', '--title', default = None, dest='title',
                     metavar = "title", type=str,
-                    help ='title of the plot')
+                    help ='Title of the plot, default: None')
 
 parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, metavar = "False",
                     help = 'Boolean (True/False).', default = 'False')
@@ -1068,15 +1068,15 @@ parser.add_argument('-m', '--m', dest = 'motif_guided', type = str, metavar = "F
                     help = 'Boolean (True/False).', default = 'False')
 
 parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
-                    help = 'file with ref motifs separated by tabs.', metavar = 'motifs.txt')
+                    help = 'To use established motifs for analysis by taking a file with ref motifs separated by tabs.', metavar = 'motifs.txt')
 
 parser.add_argument('-p', '--population', dest = 'population', required = False, 
                     metavar = "metadata.txt", type=str,
-                    help = 'population metadata file')
+                    help = 'Path to population metadata file')
 
 parser.add_argument('-mp', '--mafft_path', default = None, dest = 'mafft_path', required = False, 
                     metavar = "mafft", type=str,
-                    help = 'path to mafft, default: $PREFIX_CONDA/libexec/mafft')
+                    help = 'Path to mafft, default: $PREFIX_CONDA/libexec/mafft')
 
 parser.add_argument('-prof', '--profile', action = 'store_true', dest = 'profile', default = False,
                      help = 'Enable profiling (stored in stats.txt)')
