@@ -20,9 +20,6 @@ A tool for motif annotation and visualization in tandem repeats.
 
 - Install pylibsais (https://github.com/holstegelab/pylibsais)
 
-- Download Mafft  (https://gitlab.com/sysimm/mafft/-/tags)
-  and set the path to the binaries folder with --mafft_path. 
-
 ### Usage
 - For running MotifScope on a set of sequences (reads or assemblies) without population data:
 ```bash
