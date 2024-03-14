@@ -16,7 +16,9 @@ A tool for motif annotation and visualization in tandem repeats.
   ```
 
 - Install pylibsais (https://github.com/holstegelab/pylibsais)
-
+  ```bash
+  sh INSTALL.sh
+  ```
 ### Usage
 - For running MotifScope on a set of sequences (reads or assemblies) without population data:
 ```bash
