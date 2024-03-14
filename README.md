@@ -15,9 +15,6 @@ A tool for motif annotation and visualization in tandem repeats.
   conda activate motifscope
   ```
 
-- Install aardvark (https://github.com/holstegelab/aardvark)
-  and make the executable available in the path (or set the path with --aardvark_path)
-
 - Install pylibsais (https://github.com/holstegelab/pylibsais)
 
 ### Usage
