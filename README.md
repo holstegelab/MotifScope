@@ -14,10 +14,13 @@ A tool for motif annotation and visualization in tandem repeats.
   ```bash
   conda activate motifscope
   ```
-
 - Install pylibsais (https://github.com/holstegelab/pylibsais)
   ```bash
   sh INSTALL.sh
+  ```
+- Install MotifScope
+  ```bash
+  python setup.py install
   ```
 ### Usage
 - For running MotifScope on a set of sequences (reads or assemblies) without population data:
