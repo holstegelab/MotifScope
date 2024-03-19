@@ -1,3 +1,5 @@
+#!/usr/bin/env python
+
 import pandas as pd
 import numpy as np
 import os
@@ -870,7 +872,7 @@ def prepare_for_plotting(msa_result, motif_dict, dm):
     msa_adjusted_df = msa_df.loc[msa_df.index.repeat(msa_df.max_length)]
     msa_adjusted_df = msa_adjusted_df.drop(columns = ["max_length"])
     msa_adjusted_df = msa_adjusted_df.transpose()
-    msa_adjusted_df = msa_adjusted_df.applymap(lambda x: motif_dict_r[x])
+    msa_adjusted_df = msa_adjusted_df.map(lambda x: motif_dict_r[x])
     msa_adjusted_df.columns = range(msa_adjusted_df.columns.size)
 
     score_dict = dict(zip(dm.motif, dm.dimension_reduction))
