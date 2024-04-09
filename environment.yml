@@ -6,7 +6,7 @@ channels:
 dependencies:
   - python=3.10
   - numpy
-  - pandas
+  - pandas==2.2.1
   - matplotlib
   - biopython==1.81
   - multiprocess==0.70.14
