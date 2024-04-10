@@ -487,10 +487,10 @@ def assign_chr_to_motif(all_unique_motif, printable_asii):
         return motif_dict
 
 
-def write_seq_in_hex_chr(all_seq_motif_df, motif_dict, input_fasta_file_name, random_num):
+def write_seq_in_hex_chr(all_seq_motif_df, motif_dict, cwd_input, random_num):
     all_seq_motif_chr_df = all_seq_motif_df.replace(motif_dict)
     # write into fasta file
-    chr_fasta_file = input_fasta_file_name.replace(".fa", "_motif_in_hex_" + str(random_num) + ".hex")
+    chr_fasta_file = cwd_input + "_motif_in_hex_" + str(random_num) + ".hex"
     seq_chr_dict = {}    
     with open (chr_fasta_file, 'w') as chr_fasta:
         for column in all_seq_motif_df:
@@ -507,7 +507,7 @@ def write_seq_in_hex_chr(all_seq_motif_df, motif_dict, input_fasta_file_name, ra
             chr_fasta.write(seq_chr_string + "\n")
             seq_chr_dict[column] = seq_chr_string
             
-    motif_fasta_file = input_fasta_file_name.replace(".fa", "_motif_to_hex_" + str(random_num) + ".fa")
+    motif_fasta_file = cwd_input + "_motif_to_hex_" + str(random_num) + ".fa"
     with open (motif_fasta_file, 'w') as dict_fasta:
         for item in motif_dict:
             dict_fasta.write(">" + motif_dict[item] + "\n")
@@ -525,8 +525,8 @@ def compress_string(string, motif_dict):
     return transformed_string.strip()
 
 
-def write_compressed_seq(seq_chr_dict, motif_dict, input_fasta_file_name, random_num):
-    compressed_fasta_file = input_fasta_file_name.replace(".fa", "_compressed_representation_" + str(random_num) + ".fa")
+def write_compressed_seq(seq_chr_dict, motif_dict, cwd_input, random_num):
+    compressed_fasta_file = cwd_input + "_compressed_representation_" + str(random_num) + ".fa"
     motif_dict_r = {value: key for key, value in motif_dict.items()}
     with open (compressed_fasta_file, 'w') as compressed_fasta_file:
         for seq in seq_chr_dict:
@@ -702,14 +702,16 @@ def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_dis
     summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
     summary["index"] = summary.apply(lambda x: x["index"].split("_")[-1], axis = 1)
     summary = summary.merge(reads_name, left_on = "index", right_on = "nseq", how = "left").drop(columns = ["index", "nseq"]).set_index("read_name").fillna(0)
-    summary.to_csv(input_fasta.replace(".fa", "_umap_" + str(random_num) + "_only_consecutive_same_string_motif_count" + ".txt"), sep = "\t")
+    motif_file = input_fasta + "_umap_" + str(random_num) + "_only_consecutive_same_string_motif_count" + ".txt"
+    summary.to_csv(motif_file, sep = "\t")
     seq_distance_df = seq_distance_df.reset_index().merge(reads_name, left_on = "nseq_1", right_on = "nseq", how = "left").drop(columns = ["nseq_1", "nseq"]).set_index("read_name")
     clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
     
     plt.figure(figsize=(25, 50), dpi = 200)
     d = shc.dendrogram(Z = clusters, labels = seq_distance_df.index, orientation = "right")
     plt.title(figtitle)
-    plt.savefig(input_fasta.replace(".fa", "_umap_" + str(random_num) + "_only_consecutive_same_string_cluster" + f".{args.format}"), bbox_inches = "tight")
+    figfile = input_fasta + "_umap_" + str(random_num) + "_only_consecutive_same_string_cluster" + f".{args.format}"
+    plt.savefig(figfile, bbox_inches = "tight")
     plt.clf()
     return list(reversed(d["ivl"]))
 
@@ -846,8 +848,8 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
 
 
 
-def msa_with_characters(input_fasta_file_name, random_num):
-    chr_fasta_file = input_fasta_file_name.replace(".fa", "_motif_in_hex_" + str(random_num) + ".hex")
+def msa_with_characters(cwd_input, random_num):
+    chr_fasta_file = cwd_input + "_motif_in_hex_" + str(random_num) + ".hex"
     os.system(f"{mafft_path}/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
     os.system(f"mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
     os.system(f"{mafft_path}/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
@@ -877,7 +879,7 @@ def prepare_for_plotting(msa_result, motif_dict, dm):
 
     score_dict = dict(zip(dm.motif, dm.dimension_reduction))
     score_dict[''] = np.nan
-    df = msa_adjusted_df.applymap(lambda x: score_dict[x])
+    df = msa_adjusted_df.map(lambda x: score_dict[x])
     
     return df, max_motif_length
     
@@ -1124,7 +1126,7 @@ else:
     pool_class = Pool
 
 random_num = str(random()).replace('.', '')
-#all_seq = list(SeqIO.parse(input_fasta_to_count, "fasta"))
+cwd_input = os.path.join(os.getcwd(), os.path.basename(input_fasta_to_count))
 all_seq_dict = parse_fasta(input_fasta_to_count)
 seq_concat, seq_index = prepare_suffix_string(all_seq_dict)
 
@@ -1150,8 +1152,8 @@ with pool_class() as pool:
 
     printable_asii_list = generate_hex_chr_list()
     motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list)
-    all_seq_chr_dict = write_seq_in_hex_chr(all_seq_df, motif_chr_dict, input_fasta_to_count, random_num)
-    write_compressed_seq(all_seq_chr_dict, motif_chr_dict, input_fasta_to_count, random_num)
+    all_seq_chr_dict = write_seq_in_hex_chr(all_seq_df, motif_chr_dict, cwd_input, random_num)
+    write_compressed_seq(all_seq_chr_dict, motif_chr_dict, cwd_input, random_num)
 
     all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
     all_seq_chr_dict.clear()
@@ -1164,25 +1166,30 @@ with pool_class() as pool:
         population_metadata = pd.read_csv(population, sep = "\t", header = None)
         population_metadata.columns = ["Sample", "Group"]
         if run_msa == "True":
-            msa = msa_with_characters(input_fasta_to_count, random_num)
+            msa = msa_with_characters(cwd_input, random_num)
             msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + "_msa" + f".{args.format}"), title, population_metadata, motif_length)
+            figfile = cwd_input + "_" + str(random_num) + "_msa" + f".{args.format}"
+            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
         elif run_msa == "False":
             df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-            plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + f".{args.format}"), title, population_metadata)
+            figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
+            plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata)
 
     elif sequence_type == "reads":
         if run_msa == "True":
-            msa = msa_with_characters(input_fasta_to_count, random_num)
+            msa = msa_with_characters(cwd_input, random_num)
             msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + "_msa" + f".{args.format}"), title, motif_length)
+            figfile = cwd_input + "_reads_" + str(random_num) + "_msa" + f".{args.format}"
+            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
         elif run_msa == "False":
             df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, input_fasta_to_count.replace(".fa", "_reads_" + str(random_num) + f".{args.format}"), title)
+            figfile = cwd_input + "_reads_" + str(random_num) + f".{args.format}"
+            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title)
     
     elif sequence_type == "single":
         df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-        plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, input_fasta_to_count.replace(".fa", "_" + str(random_num) + f".{args.format}"), title)
+        figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
+        plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
 
 
 if args.profile:
