@@ -7,6 +7,7 @@ dependencies:
   - python=3.10
   - numpy
   - pandas==2.2.1
+  - setuptools=69.2.0=pyhd8ed1ab_0
   - matplotlib
   - biopython==1.81
   - multiprocess==0.70.14
