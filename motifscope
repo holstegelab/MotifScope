@@ -9,7 +9,9 @@ import sys
 from Bio import SeqIO
 from Bio import Align
 from multiprocess import Pool
-from itertools import combinations_with_replacement, groupby
+from itertools import groupby
+import bisect
+from collections import defaultdict
 
 import umap
 import copy
@@ -49,7 +51,6 @@ def prepare_suffix_string(sequence_dict):
         index.append(pos)
     index = np.array(index)
     seq = '$'.join(values) + '$'
-
     return (seq, index) 
 
 def get_positions(suffix_ar, kmer_idx, kmer_cnt):
@@ -332,7 +333,6 @@ def select_best_kmers_motif_guided(k_min, k_max, seq, index, used_kmer, round, r
             else:
                 candidate_kmer = res[0]
 
-
         else:
             if kmer_set_selected in ref_motifs_dict_r:
                 kmer_selected = ref_motifs_dict_r[kmer_set_selected]
@@ -446,25 +446,55 @@ def mask_all_seq(selected_kmers, marked_positions, seq):
     return marked_positions
 
 
-def transform_to_df(index, marked_positions, seq_dict):
-    seq_df_list = []
-    n = 0
-    start = 0
-    for seq_key, seq_value in seq_dict.items():
-        seq_array = pd.DataFrame(list(seq_value), columns=[seq_key])
+def get_label(value,range_starts,labels):
+    idx = bisect.bisect_right(range_starts, value) - 1
+    return labels[idx], range_starts[idx]
 
-        pos = [(t[0], t[1]) for t in marked_positions if start <= t[0] < index[n]]
+def transform_to_df(index, marked_positions, seq_dict, seq_concat):
+    all_marked_positions = set(range(len(seq_concat)))
+    marked = []
+    for t in marked_positions:
+        marked += list(range(t[0], t[0] + len(t[1])))
+    marked = set(marked)
+    single_bp = all_marked_positions - marked
 
-        for p in pos:
-            seq_array.iloc[p[0] - start: p[0] - start + len(p[1]), 0] = p[1]
+    all_motifs = []
+    for t in single_bp:
+        all_motifs += [(t, t+1, seq_concat[t])]
+    
+    for t in marked_positions:
+        all_motifs += [(t[0], t[0]+len(t[1]), t[1])]
+    all_motifs = sorted(all_motifs, key=lambda x: x[0])
 
-        start = index[n]
-        n += 1
+    starts = np.append(index, [0])
+    starts.sort()
+    starts = starts[:-1]
+    ids = list(seq_dict.keys())
+    if not all(starts[i] <= starts[i + 1] for i in range(len(starts) - 1)):
+        combined = sorted(zip(starts, ids))
+        starts, ids = zip(*combined)
 
-        seq_df_list.append(seq_array)
+    # Create the labeled values list using a list comprehension
+    all_motif_seq = [
+    (m[0] - start, m[1] - start, m[2], label) 
+    for m in all_motifs 
+    if m[2] != "$"
+    for label, start in [get_label(m[0], starts, ids)]
+    ]
 
-    seq_df = pd.concat(seq_df_list, axis=1)
-    return seq_df
+    max_row_index = max(end_row for _, end_row, _, _ in all_motif_seq)
+    columns = list(set(column for _, _, _, column in all_motif_seq))
+
+    values_array = np.full((max_row_index, len(columns)), np.nan, dtype=object)
+    col_index_map = {col: idx for idx, col in enumerate(columns)}
+
+    for start_row, end_row, value, column_name in all_motif_seq:
+        col_idx = col_index_map[column_name]
+        values_array[start_row:end_row, col_idx] = value
+
+    df = pd.DataFrame(values_array, index=range(max_row_index), columns=columns)
+
+    return all_motif_seq, df
 
 def generate_hex_chr_list():
     usable_hex = list(range(1,256))
@@ -486,35 +516,29 @@ def assign_chr_to_motif(all_unique_motif, printable_asii):
         motif_dict = dict(zip(all_unique_motif, printable_asii_to_include))
         return motif_dict
 
+def write_seq_in_hex_chr(all_motif_seq, motif_dict, cwd_input, random_num):
+    seq_dict = defaultdict(list)
+    for m in all_motif_seq:
+        label = m[3]
+        seq_dict[label].append(motif_dict[m[2]])
+    # Convert lists to strings with space separator
+    for key in seq_dict:
+        seq_dict[key] = " ".join(seq_dict[key])
+        seq_dict = dict(seq_dict)
 
-def write_seq_in_hex_chr(all_seq_motif_df, motif_dict, cwd_input, random_num):
-    all_seq_motif_chr_df = all_seq_motif_df.replace(motif_dict)
-    # write into fasta file
-    chr_fasta_file = cwd_input + "_motif_in_hex_" + str(random_num) + ".hex"
-    seq_chr_dict = {}    
-    with open (chr_fasta_file, 'w') as chr_fasta:
-        for column in all_seq_motif_df:
-            seq_description = column
-            seq_motif_in_chr = all_seq_motif_chr_df[column].dropna().tolist()
-            seq_motif = all_seq_motif_df[column].dropna().tolist()
-            seq_chr = []
-            i = 0
-            while i < len(seq_motif):
-                seq_chr += [seq_motif_in_chr[i]]
-                i += len(seq_motif[i])
-            seq_chr_string = " ".join(seq_chr)
-            chr_fasta.write(">" + seq_description + "\n")
-            chr_fasta.write(seq_chr_string + "\n")
-            seq_chr_dict[column] = seq_chr_string
-            
     motif_fasta_file = cwd_input + "_motif_to_hex_" + str(random_num) + ".fa"
     with open (motif_fasta_file, 'w') as dict_fasta:
         for item in motif_dict:
             dict_fasta.write(">" + motif_dict[item] + "\n")
-            dict_fasta.write(item + "\n")        
-    return seq_chr_dict
-            
+            dict_fasta.write(item + "\n")
 
+    hex_fasta_file = cwd_input + "_motif_in_hex_" + str(random_num) + ".hex"
+    with open (hex_fasta_file, 'w') as hex_fasta:
+        for item in seq_dict:
+            hex_fasta.write(">" + item + "\n")
+            hex_fasta.write(seq_dict[item] + "\n")
+
+    return seq_dict
 
 def compress_string(string, motif_dict):
     parts = string.split(" ")
@@ -543,89 +567,46 @@ def normalize_edit_distance(distance, seq_1_length, seq_2_length):
     else:
         return 0
 
-
 def edit_distance_between_seq_byte(input_seq_chr_dict):
     seq_chr_dict = {}
-    for seq in input_seq_chr_dict:
-        if input_seq_chr_dict[seq] == "":
-            seq_chr_dict[seq] = str.encode(" ")
+    for seq, chr_str in input_seq_chr_dict.items():
+        if chr_str == "":
+            seq_chr_dict[seq] = b" "  # Convert space to byte representation
         else:
-            seq_chr_dict[seq] = hex_to_bytes(input_seq_chr_dict[seq].replace(" ", ""))
+            seq_chr_dict[seq] = hex_to_bytes(chr_str.replace(" ", ""))  # Assuming hex_to_bytes is defined elsewhere
     
-    seq_distance_df = pd.DataFrame(list(combinations_with_replacement(list(seq_chr_dict.keys()), 2)), columns=['nseq_1', 'nseq_2'])
-    seq_distance_df["seq_1"] = seq_distance_df.apply(lambda x: seq_chr_dict[x["nseq_1"]], axis = 1)
-    seq_distance_df["seq_2"] = seq_distance_df.apply(lambda x: seq_chr_dict[x["nseq_2"]], axis = 1)
-    ls = pool.starmap(Levenshtein.distance, zip(seq_distance_df.seq_1, seq_distance_df.seq_2))
-    seq_distance_df['distance'] = ls
-    seq_distance_df['distance'] = seq_distance_df.apply(lambda x: normalize_edit_distance(x["distance"], len(x["seq_1"]), len(x["seq_2"])), axis = 1)
-
-    seq_distance_df = seq_distance_df.drop(columns = ["seq_1", "seq_2"])
-
-    seq_distance_df_2 = seq_distance_df.copy()
-    seq_distance_df_2["nseq_2"] = seq_distance_df["nseq_1"]
-    seq_distance_df_2["nseq_1"] = seq_distance_df["nseq_2"]
-    seq_distance_df = pd.concat([seq_distance_df, seq_distance_df_2], ignore_index = True)
-    seq_distance_df = seq_distance_df.drop_duplicates().pivot(index = 'nseq_1', columns = 'nseq_2', values = 'distance').astype(float)
-
+    seq_keys = list(input_seq_chr_dict.keys())
+    seq_values = list(seq_chr_dict.values())
+    n = len(seq_keys)
+    
+    distance_matrix = np.zeros((n, n))
+    
+    for i in range(n):
+        for j in range(i, n):
+            dist = Levenshtein.distance(seq_chr_dict[seq_keys[i]], seq_chr_dict[seq_keys[j]])
+            distance_matrix[i, j] = normalize_edit_distance(dist, len(seq_values[i]), len(seq_values[j]))
+            if i != j:
+                distance_matrix[j, i] = distance_matrix[i, j]
+    
+    seq_distance_df = pd.DataFrame(distance_matrix, index=seq_keys, columns=seq_keys)
+    
     return seq_distance_df
 
 def get_motif_pairwise_distance(motif_list):
-    score_df = pd.DataFrame(list(combinations_with_replacement(motif_list, 2)), columns=['motif_1', 'motif_2'])
-    
-    score_df['tuple'] = list(zip(score_df.motif_1, score_df.motif_2))
-    ls = pool.starmap(pairwise_alignment, score_df['tuple'].tolist())
-    score_df['score'] = ls
-    score_df = score_df.drop(columns = ['tuple'])
+    score_dict = {}
+    # Compute scores for each pair of motifs
+    for i in range(len(motif_list)):
+        for j in range(i, len(motif_list)):
+            motif1 = motif_list[i]
+            motif2 = motif_list[j]
+            score = pairwise_alignment(motif1, motif2)
+            score_dict[(motif1, motif2)] = score
+            if i != j:
+                score_dict[(motif2, motif1)] = score
 
-    score_df_2 = score_df.copy()
-    score_df_2["motif_2"] = score_df["motif_1"]
-    score_df_2["motif_1"] = score_df["motif_2"]
-    score_df = pd.concat([score_df, score_df_2], ignore_index = True)
-    score_df = score_df.drop_duplicates().pivot(index = 'motif_1', columns = 'motif_2', values = 'score').astype(float)
-
+    score_df = pd.DataFrame(score_dict.values(), index=pd.MultiIndex.from_tuples(score_dict.keys())).unstack().astype(float)
     return score_df
 
-def edit_distance_between_seq_byte(input_seq_chr_dict):
-    seq_chr_dict = {}
-    for seq in input_seq_chr_dict:
-        if input_seq_chr_dict[seq] == "":
-            seq_chr_dict[seq] = str.encode(" ")
-        else:
-            seq_chr_dict[seq] = hex_to_bytes(input_seq_chr_dict[seq].replace(" ", ""))
-    
-    seq_distance_df = pd.DataFrame(list(combinations_with_replacement(list(seq_chr_dict.keys()), 2)), columns=['nseq_1', 'nseq_2'])
-    seq_distance_df["seq_1"] = seq_distance_df.apply(lambda x: seq_chr_dict[x["nseq_1"]], axis = 1)
-    seq_distance_df["seq_2"] = seq_distance_df.apply(lambda x: seq_chr_dict[x["nseq_2"]], axis = 1)
-    
-    ls = pool.starmap(Levenshtein.distance, zip(seq_distance_df.seq_1, seq_distance_df.seq_2))
-    seq_distance_df['distance'] = ls
-    seq_distance_df['distance'] = seq_distance_df.apply(lambda x: normalize_edit_distance(x["distance"], len(x["seq_1"]), len(x["seq_2"])), axis = 1)
-
-    seq_distance_df = seq_distance_df.drop(columns = ["seq_1", "seq_2"])
-
-    seq_distance_df_2 = seq_distance_df.copy()
-    seq_distance_df_2["nseq_2"] = seq_distance_df["nseq_1"]
-    seq_distance_df_2["nseq_1"] = seq_distance_df["nseq_2"]
-    seq_distance_df = pd.concat([seq_distance_df, seq_distance_df_2], ignore_index = True)
-    seq_distance_df = seq_distance_df.drop_duplicates().pivot(index = 'nseq_1', columns = 'nseq_2', values = 'distance').astype(float)
-
-    return seq_distance_df
-
-def get_motif_pairwise_distance_new(motif_list):
-    score_df = pd.DataFrame(list(combinations_with_replacement(motif_list, 2)), columns=['motif_1', 'motif_2'])
-    
-    score_df['tuple'] = list(zip(score_df.motif_1, score_df.motif_2))
-    ls = pool.starmap(pairwise_alignment, score_df['tuple'].tolist())
-    score_df['score'] = ls
-    score_df = score_df.drop(columns = ['tuple'])
-    
-    score_df_2 = score_df.copy()
-    score_df_2["motif_2"] = score_df["motif_1"]
-    score_df_2["motif_1"] = score_df["motif_2"]
-    score_df = pd.concat([score_df, score_df_2], ignore_index = True)
-    score_df = score_df.drop_duplicates().pivot(index = 'motif_1', columns = 'motif_2', values = 'score').astype(float)
-
-    return score_df
 
 def run_umap(dm, method='UMAP', rank=0.5, norm=True):
     """Maps motif distance matrix 'dm' to a 1-dimensional space using UMAP or MDS.
@@ -693,9 +674,9 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
     return X_transform_L2
 
 def map_score_to_alignment(all_seq_motifs, X_transform_L2):
-    motif_dict = dict(zip(X_transform_L2.motif, map(float, X_transform_L2.dimension_reduction)))
+    motif_dict = {str(motif): float(reduction) for motif, reduction in zip(X_transform_L2['motif'], X_transform_L2['dimension_reduction'])}
     motif_dict['nan'] = np.nan
-    df = all_seq_motifs.map(lambda x: motif_dict[str(x)])
+    df = all_seq_motifs.map(motif_dict.get)
     return df.transpose()
 
 def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_distance_df, figtitle):
@@ -715,17 +696,35 @@ def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_dis
     plt.clf()
     return list(reversed(d["ivl"]))
 
+def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, population_df):
+    plt.rcParams.update({
+        'font.size': 1,              # Default font size
+        'axes.titlesize': 1,         # Font size for axes titles
+        'axes.labelsize': 1,         # Font size for x and y labels
+        'xtick.labelsize': 1,        # Font size for x tick labels
+        'ytick.labelsize': 1,        # Font size for y tick labels
+        'legend.fontsize': 1,        # Font size for legend
+        'figure.titlesize': 2,        # Font size for figure title
+        'lines.linewidth': 0.1,         # Width of plot lines
+        'axes.linewidth': 0.2,        # Width of axes lines
+        'grid.linewidth': 0.1,        # Width of grid lines
+        'xtick.major.width': 0.1,     # Width of x-axis major ticks
+        'ytick.major.width': 0.1,     # Width of y-axis major ticks
+        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
+        'ytick.minor.width': 0.1,
+        'xtick.major.size': 0.5,        # Length of x-axis major ticks
+        'ytick.major.size': 0.5,        # Length of y-axis major ticks
+        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
+        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
+    })
 
-def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, population_df):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.02)
 
     for col in range(3):
         axs = fig.add_subplot(spec[0, col])
     all_axes = fig.get_axes()    
 
-    summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
-    summary = summary.set_index("index")
     clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
@@ -733,8 +732,6 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
     seq_order_list = list(reversed(d["ivl"]))
 
     df = df.reindex(seq_order_list)
-    all_seq_motifs = all_seq_motifs.transpose()
-    all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
     cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
     #cmap2 = copy.copy(plt.get_cmap("Spectral"))
@@ -750,24 +747,22 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
     xticks_labels = [str(x) for x in xticks_positions]
     all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False, rotation=0)
     all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels, fontsize = 20, rotation=90)
-    #all_axes[2].set_xticklabels(xticks_labels, fontsize = 8)
-    #all_axes[2].set_yticklabels(all_axes[2].get_yticklabels(), size = 5)
+    all_axes[2].set_xticklabels(xticks_labels, rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major')
-    cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    cbar_ax.set_yticklabels(dm.motif.tolist())
     
-    all_seq_motifs = all_seq_motifs.transpose()
-    
-    for i in range(all_seq_motifs.shape[1]):
-        j = 0
-        while j < all_seq_motifs.shape[0]:
-            if str(all_seq_motifs.iloc[j, i]) != "nan":
-                all_axes[2].add_patch(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
-                j += len(all_seq_motifs.iloc[j, i])
-            else:
-                j += 1
+    row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
 
+    rectangles = []
+    for m in all_motif_seq:
+        row_index = row_index_map[m[3]]  # Get the row index based on the sequence order list
+        start_col = m[0]  # Starting column index
+        length = len(m[2])  # Length of the motif
+        rectangles.append(Rectangle((start_col, row_index), length, 1, fill=False, edgecolor='black', lw=0.02, clip_on=False))
 
+    for rect in rectangles:
+        all_axes[2].add_patch(rect)
+        
     seq_population = pd.DataFrame({'seq': seq_order_list})
     seq_population["Sample"] = seq_population.apply(lambda x: x["seq"].split("#")[0], axis = 1)
         
@@ -791,6 +786,7 @@ def plot_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, populati
 
     all_axes[2].title.set_text(figtitle)
     plt.yticks(rotation=0)
+    print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
 
@@ -1041,6 +1037,7 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     plt.savefig(figname, bbox_inches = "tight")
 
 
+
 #######################
 
 
@@ -1130,66 +1127,68 @@ cwd_input = os.path.join(os.getcwd(), os.path.basename(input_fasta_to_count))
 all_seq_dict = parse_fasta(input_fasta_to_count)
 seq_concat, seq_index = prepare_suffix_string(all_seq_dict)
 
-with pool_class() as pool:
-    if motif_guided == "False":
-        candidate_kmer, masked_postion, masked_seq = select_all_kmer(seq_concat, seq_index, min_kmer_size, max_kmer_size)
-        
-    elif motif_guided == "True":
-        with open(ref_motifs, 'r') as ref:
-            ref_motifs = ref.readlines()
-        ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
-        ref_motifs_list = [i for l in ref_motifs_list for i in l]
-        candidate_kmer, masked_postion, masked_seq = select_all_kmer_motif_guided(seq_concat, seq_index, min_kmer_size, max_kmer_size, ref_motifs_list)
-
-        
-
-    masked_postion = mask_all_seq(candidate_kmer, masked_postion, masked_seq)
-    all_seq_df = transform_to_df(seq_index, masked_postion, all_seq_dict)
-
-    unique_motifs = pd.concat([all_seq_df[col] for col in all_seq_df.columns]).unique().tolist()
-    if np.nan in unique_motifs:
-        unique_motifs.remove(np.nan)
-
-    printable_asii_list = generate_hex_chr_list()
-    motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list)
-    all_seq_chr_dict = write_seq_in_hex_chr(all_seq_df, motif_chr_dict, cwd_input, random_num)
-    write_compressed_seq(all_seq_chr_dict, motif_chr_dict, cwd_input, random_num)
-
-    all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
-    all_seq_chr_dict.clear()
-    alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
-    dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
-
-
-    if sequence_type == "assembly":
-        population = args.population
-        population_metadata = pd.read_csv(population, sep = "\t", header = None)
-        population_metadata.columns = ["Sample", "Group"]
-        if run_msa == "True":
-            msa = msa_with_characters(cwd_input, random_num)
-            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            figfile = cwd_input + "_" + str(random_num) + "_msa" + f".{args.format}"
-            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
-        elif run_msa == "False":
-            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-            figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
-            plot_df(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata)
-
-    elif sequence_type == "reads":
-        if run_msa == "True":
-            msa = msa_with_characters(cwd_input, random_num)
-            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            figfile = cwd_input + "_reads_" + str(random_num) + "_msa" + f".{args.format}"
-            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
-        elif run_msa == "False":
-            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-            figfile = cwd_input + "_reads_" + str(random_num) + f".{args.format}"
-            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title)
+if motif_guided == "False":
+    candidate_kmer, masked_postion, masked_seq = select_all_kmer(seq_concat, seq_index, min_kmer_size, max_kmer_size)
     
-    elif sequence_type == "single":
+elif motif_guided == "True":
+    with open(ref_motifs, 'r') as ref:
+        ref_motifs = ref.readlines()
+    ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
+    ref_motifs_list = [i for l in ref_motifs_list for i in l]
+    candidate_kmer, masked_postion, masked_seq = select_all_kmer_motif_guided(seq_concat, seq_index, min_kmer_size, max_kmer_size, ref_motifs_list)
+
+masked_postion = mask_all_seq(candidate_kmer, masked_postion, masked_seq)
+all_positions, all_seq_df = transform_to_df(seq_index, masked_postion, all_seq_dict, seq_concat)
+
+unique_motifs = {m[2] for m in all_positions}
+unique_motifs = list(unique_motifs)
+
+printable_asii_list = generate_hex_chr_list()
+motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list)
+all_seq_chr_dict = write_seq_in_hex_chr(all_positions, motif_chr_dict, cwd_input, random_num)
+write_compressed_seq(all_seq_chr_dict, motif_chr_dict, cwd_input, random_num)
+
+print("tandem repeat decomposition DONE")
+
+all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
+#all_seq_chr_dict.clear()
+alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
+dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
+
+
+if sequence_type == "assembly":
+    population = args.population
+    population_metadata = pd.read_csv(population, sep = "\t", header = None)
+    population_metadata.columns = ["Sample", "Group"]
+    if run_msa == "True":
+        print("running MSA")
+        msa = msa_with_characters(cwd_input, random_num)
+        print("MSA DONE")
+        msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
+        figfile = cwd_input + "_" + str(random_num) + "_msa" + f".{args.format}"
+        print("generating figure")
+        plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
+    elif run_msa == "False":
         df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
         figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
-        plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
+        print("generating figure")
+        plot_df(df_to_plot, dimension_reduction_result, all_positions, all_seq_distance_df, figfile, title, population_metadata)
+
+elif sequence_type == "reads":
+    if run_msa == "True":
+        msa = msa_with_characters(cwd_input, random_num)
+        msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
+        figfile = cwd_input + "_reads_" + str(random_num) + "_msa" + f".{args.format}"
+        plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
+    elif run_msa == "False":
+        df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+        figfile = cwd_input + "_reads_" + str(random_num) + f".{args.format}"
+        plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title)
+
+elif sequence_type == "single":
+    df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+    figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
+    plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
 
 
 if args.profile:
