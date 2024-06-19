@@ -42,3 +42,10 @@ To run multiple sequence alignment on the compressed representation of the seque
 To run the algorithm with a set of known motifs, set ```-m``` to ```True``` and provide the motifs with ```-motifs motifs.txt```. The motif file ```motifs.txt``` should contain the motifs separated with tab. 
 <br>
 To use random categorical colors for motifs, set ```-e``` to ```random```. To project motifs onto a continuous color scale, set ```-e``` to ```UMAP``` or ```MDS``` for dimension reduction based on motif similarities.
+<br>
+The repeat compositions are output in a fasta file. For example,
+```bash
+>HG002#2#JAHKSD010000034.1:9910981-9913041/rc
+G1 A1 G1 C1 A2 G1 A1 C1 T1 C1 T1 G1 T3 C1 A2 AAAAG12 A1 AAAAG1 C1 A1 T1 G1 T2 C1 T1 A3 G1 A1 G1
+```
+The motifs are separated by spaces. Each string represents a motif, and the following number indicates how many consecutive copies of that motif occur.
