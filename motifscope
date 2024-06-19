@@ -9,7 +9,7 @@ import sys
 from Bio import SeqIO
 from Bio import Align
 from multiprocess import Pool
-from itertools import groupby
+from itertools import groupby, combinations_with_replacement
 import bisect
 from collections import defaultdict
 
@@ -66,18 +66,20 @@ def get_kmer_sequence(seq, suffix_ar, kmer_idx, kmer_len):
     return seq[xloc:xloc+kmer_len]
 
 def pairwise_alignment(seq1, seq2):
+    
     aligner = Align.PairwiseAligner()
     aligner.mode = 'global'
     aligner.match_score = 0
     aligner.mismatch_score = -2
     aligner.open_gap_score = -5
-    aligner.extend_gap_score = -5
-    aligner.target_end_gap_score = 0.0
-    aligner.query_end_gap_score = 0.0
+    aligner.extend_gap_score = -1
+    aligner.target_end_gap_score = -3
+    aligner.query_end_gap_score = -3
     alignments = aligner.align(seq1, seq2)
     scores = []
     for alignment in alignments:
         scores.append(alignment.score)
+
     return max(scores)
 
 def select_best_perm_kmer(new_kmer, kmer_list, previous_kmer):
@@ -597,12 +599,12 @@ def get_motif_pairwise_distance(motif_list):
     # Compute scores for each pair of motifs
     for i in range(len(motif_list)):
         for j in range(i, len(motif_list)):
-            motif1 = motif_list[i]
-            motif2 = motif_list[j]
-            score = pairwise_alignment(motif1, motif2)
-            score_dict[(motif1, motif2)] = score
+            motif_1 = motif_list[i]
+            motif_2 = motif_list[j]
+            score = pairwise_alignment(motif_1, motif_2)
+            score_dict[(motif_1, motif_2)] = score
             if i != j:
-                score_dict[(motif2, motif1)] = score
+                score_dict[(motif_2, motif_1)] = score
 
     score_df = pd.DataFrame(score_dict.values(), index=pd.MultiIndex.from_tuples(score_dict.keys())).unstack().astype(float)
     return score_df
@@ -791,7 +793,28 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
 
 
 def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    plt.rcParams.update({
+        'font.size': 1,              # Default font size
+        'axes.titlesize': 1,         # Font size for axes titles
+        'axes.labelsize': 1,         # Font size for x and y labels
+        'xtick.labelsize': 1,        # Font size for x tick labels
+        'ytick.labelsize': 1,        # Font size for y tick labels
+        'legend.fontsize': 1,        # Font size for legend
+        'figure.titlesize': 2,        # Font size for figure title
+        'lines.linewidth': 0.1,         # Width of plot lines
+        'axes.linewidth': 0.2,        # Width of axes lines
+        'grid.linewidth': 0.1,        # Width of grid lines
+        'xtick.major.width': 0.1,     # Width of x-axis major ticks
+        'ytick.major.width': 0.1,     # Width of y-axis major ticks
+        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
+        'ytick.minor.width': 0.1,
+        'xtick.major.size': 0.5,        # Length of x-axis major ticks
+        'ytick.major.size': 0.5,        # Length of y-axis major ticks
+        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
+        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
+    })
+
+    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
@@ -822,7 +845,7 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
     all_axes[1].set_xticks(xticks_positions)
-    all_axes[1].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
+    all_axes[1].set_xticklabels(xticks_labels,rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major')
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
@@ -881,7 +904,28 @@ def prepare_for_plotting(msa_result, motif_dict, dm):
     
 
 def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, population_df, max_motif_length):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    plt.rcParams.update({
+        'font.size': 1,              # Default font size
+        'axes.titlesize': 1,         # Font size for axes titles
+        'axes.labelsize': 1,         # Font size for x and y labels
+        'xtick.labelsize': 1,        # Font size for x tick labels
+        'ytick.labelsize': 1,        # Font size for y tick labels
+        'legend.fontsize': 1,        # Font size for legend
+        'figure.titlesize': 2,        # Font size for figure title
+        'lines.linewidth': 0.1,         # Width of plot lines
+        'axes.linewidth': 0.2,        # Width of axes lines
+        'grid.linewidth': 0.1,        # Width of grid lines
+        'xtick.major.width': 0.1,     # Width of x-axis major ticks
+        'ytick.major.width': 0.1,     # Width of y-axis major ticks
+        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
+        'ytick.minor.width': 0.1,
+        'xtick.major.size': 0.5,        # Length of x-axis major ticks
+        'ytick.major.size': 0.5,        # Length of y-axis major ticks
+        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
+        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
+    })
+
+    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.01)
 
     for col in range(3):
@@ -911,7 +955,7 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
     xticks_labels = [str(x) for x in xticks_positions]
     all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
     all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
+    all_axes[2].set_xticklabels(xticks_labels,rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
@@ -951,8 +995,28 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
 
 
 def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, max_motif_length):
+    plt.rcParams.update({
+        'font.size': 1,              # Default font size
+        'axes.titlesize': 1,         # Font size for axes titles
+        'axes.labelsize': 1,         # Font size for x and y labels
+        'xtick.labelsize': 1,        # Font size for x tick labels
+        'ytick.labelsize': 1,        # Font size for y tick labels
+        'legend.fontsize': 1,        # Font size for legend
+        'figure.titlesize': 2,        # Font size for figure title
+        'lines.linewidth': 0.1,         # Width of plot lines
+        'axes.linewidth': 0.2,        # Width of axes lines
+        'grid.linewidth': 0.1,        # Width of grid lines
+        'xtick.major.width': 0.1,     # Width of x-axis major ticks
+        'ytick.major.width': 0.1,     # Width of y-axis major ticks
+        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
+        'ytick.minor.width': 0.1,
+        'xtick.major.size': 0.5,        # Length of x-axis major ticks
+        'ytick.major.size': 0.5,        # Length of y-axis major ticks
+        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
+        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
+    })
 
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.01)
 
     for col in range(2):
@@ -979,12 +1043,10 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     xticks_labels = [str(x) for x in xticks_positions]
     all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
     all_axes[1].set_xticks(xticks_positions)
-    all_axes[1].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
+    all_axes[1].set_xticklabels(xticks_labels,rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
     cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
-
-
     for i in range(df.shape[0]):
         j = 0
         m = 0
@@ -999,7 +1061,27 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     plt.savefig(figname, bbox_inches = "tight")
 
 def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), 1), dpi = 300)
+    plt.rcParams.update({
+        'font.size': 1,              # Default font size
+        'axes.titlesize': 1,         # Font size for axes titles
+        'axes.labelsize': 1,         # Font size for x and y labels
+        'xtick.labelsize': 1,        # Font size for x tick labels
+        'ytick.labelsize': 1,        # Font size for y tick labels
+        'legend.fontsize': 1,        # Font size for legend
+        'figure.titlesize': 2,        # Font size for figure title
+        'lines.linewidth': 0.1,         # Width of plot lines
+        'axes.linewidth': 0.2,        # Width of axes lines
+        'grid.linewidth': 0.1,        # Width of grid lines
+        'xtick.major.width': 0.1,     # Width of x-axis major ticks
+        'ytick.major.width': 0.1,     # Width of y-axis major ticks
+        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
+        'ytick.minor.width': 0.1,
+        'xtick.major.size': 0.5,        # Length of x-axis major ticks
+        'ytick.major.size': 0.5,        # Length of y-axis major ticks
+        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
+        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
+    })
+    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), 0.1), dpi = 300)
     spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(1):
@@ -1083,7 +1165,7 @@ parser.add_argument('-prof', '--profile', action = 'store_true', dest = 'profile
                      help = 'Enable profiling (stored in stats.txt)')
 
 parser.add_argument('-e', '--embed_motif_method', default = 'UMAP', dest= 'embed_motif_method', 
-                     help = 'Embedding method for motif color scale (option: MDS or UMAP), default: UMAP')
+                     help = 'Embedding method for motif color scale (option: MDS, UMAP or random), default: UMAP')
 
 parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_rank_embed', type = float,
                      help = 'Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
@@ -1153,6 +1235,11 @@ print("tandem repeat decomposition DONE")
 all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
 #all_seq_chr_dict.clear()
 alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
+
+#if args.embed_motif_method == "random":
+   #dimension_reduction_result = 
+#else:
+    #dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
 dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
 
 
