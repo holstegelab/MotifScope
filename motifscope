@@ -9,7 +9,7 @@ import sys
 from Bio import SeqIO
 from Bio import Align
 from multiprocess import Pool
-from itertools import groupby, combinations_with_replacement
+from itertools import groupby
 import bisect
 from collections import defaultdict
 
@@ -71,7 +71,7 @@ def pairwise_alignment(seq1, seq2):
     aligner.mode = 'global'
     aligner.match_score = 0
     aligner.mismatch_score = -2
-    aligner.open_gap_score = -5
+    aligner.open_gap_score = -4
     aligner.extend_gap_score = -1
     aligner.target_end_gap_score = -3
     aligner.query_end_gap_score = -3
@@ -609,6 +609,26 @@ def get_motif_pairwise_distance(motif_list):
     score_df = pd.DataFrame(score_dict.values(), index=pd.MultiIndex.from_tuples(score_dict.keys())).unstack().astype(float)
     return score_df
 
+def sort_motifs(all_seq_motifs):
+    motif_counts = defaultdict(int)
+    for m in all_seq_motifs:
+        motif = m[2]
+        motif_counts[motif] += 1
+    motif_counts = dict(motif_counts)
+    sorted_motifs = sorted(motif_counts.items(), key=lambda x: x[1], reverse=True)
+
+    # Step 3: Assign ranks starting from the highest count
+    max_rank = len(sorted_motifs)
+    motif_rank_dict = {motif: max_rank - rank for rank, (motif, count) in enumerate(sorted_motifs)}
+
+    # Step 4: Convert the motif_rank_dict to a DataFrame
+    motif_rank_df = pd.DataFrame(list(motif_rank_dict.items()), columns=['motif', 'dimension_reduction'])
+
+    # Step 5: Sort the DataFrame by Rank in descending order
+    motif_rank_df = motif_rank_df.sort_values(by='dimension_reduction', ascending=True).reset_index(drop=True)
+
+    return motif_rank_df
+
 
 def run_umap(dm, method='UMAP', rank=0.5, norm=True):
     """Maps motif distance matrix 'dm' to a 1-dimensional space using UMAP or MDS.
@@ -699,28 +719,7 @@ def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_dis
     return list(reversed(d["ivl"]))
 
 def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, population_df):
-    plt.rcParams.update({
-        'font.size': 1,              # Default font size
-        'axes.titlesize': 1,         # Font size for axes titles
-        'axes.labelsize': 1,         # Font size for x and y labels
-        'xtick.labelsize': 1,        # Font size for x tick labels
-        'ytick.labelsize': 1,        # Font size for y tick labels
-        'legend.fontsize': 1,        # Font size for legend
-        'figure.titlesize': 2,        # Font size for figure title
-        'lines.linewidth': 0.1,         # Width of plot lines
-        'axes.linewidth': 0.2,        # Width of axes lines
-        'grid.linewidth': 0.1,        # Width of grid lines
-        'xtick.major.width': 0.1,     # Width of x-axis major ticks
-        'ytick.major.width': 0.1,     # Width of y-axis major ticks
-        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
-        'ytick.minor.width': 0.1,
-        'xtick.major.size': 0.5,        # Length of x-axis major ticks
-        'ytick.major.size': 0.5,        # Length of y-axis major ticks
-        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
-        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
-    })
-
-    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.02)
 
     for col in range(3):
@@ -735,15 +734,25 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
 
     df = df.reindex(seq_order_list)
 
-    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
-    cmap2.set_over('none')
-
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
-    
-    sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))}, yticklabels=True)
-   
+    if args.embed_motif_method == "random":
+        g = len(dm.motif.unique())
+        colors = np.random.rand(g, 3)
+        # Create a colormap from the random colors
+        cmap = matplotlib.colors.ListedColormap(colors)
+        sns.heatmap(df, cmap=cmap, ax=all_axes[2], cbar_ax=cbar_ax, yticklabels=True)
+
+        bounds = list(range(-1, 2*g, 2))
+        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
+        cbar_ax.set_yticklabels(list(dm.motif.unique()))
+        
+    else:
+        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+        cmap2.set_over('none')
+        sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))}, yticklabels=True)
+        cbar_ax.set_yticklabels(dm.motif.tolist())
+
     all_axes[2].set(ylabel="")
     xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
     xticks_labels = [str(x) for x in xticks_positions]
@@ -751,7 +760,7 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
     all_axes[2].set_xticks(xticks_positions)
     all_axes[2].set_xticklabels(xticks_labels, rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major')
-    cbar_ax.set_yticklabels(dm.motif.tolist())
+    #cbar_ax.set_yticklabels(dm.motif.tolist())
     
     row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
 
@@ -764,7 +773,8 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
 
     for rect in rectangles:
         all_axes[2].add_patch(rect)
-        
+    
+    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
     seq_population = pd.DataFrame({'seq': seq_order_list})
     seq_population["Sample"] = seq_population.apply(lambda x: x["seq"].split("#")[0], axis = 1)
         
@@ -793,28 +803,7 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
 
 
 def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
-    plt.rcParams.update({
-        'font.size': 1,              # Default font size
-        'axes.titlesize': 1,         # Font size for axes titles
-        'axes.labelsize': 1,         # Font size for x and y labels
-        'xtick.labelsize': 1,        # Font size for x tick labels
-        'ytick.labelsize': 1,        # Font size for y tick labels
-        'legend.fontsize': 1,        # Font size for legend
-        'figure.titlesize': 2,        # Font size for figure title
-        'lines.linewidth': 0.1,         # Width of plot lines
-        'axes.linewidth': 0.2,        # Width of axes lines
-        'grid.linewidth': 0.1,        # Width of grid lines
-        'xtick.major.width': 0.1,     # Width of x-axis major ticks
-        'ytick.major.width': 0.1,     # Width of y-axis major ticks
-        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
-        'ytick.minor.width': 0.1,
-        'xtick.major.size': 0.5,        # Length of x-axis major ticks
-        'ytick.major.size': 0.5,        # Length of y-axis major ticks
-        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
-        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
-    })
-
-    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
@@ -833,13 +822,25 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     all_seq_motifs = all_seq_motifs.transpose()
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
-    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
-    cmap2.set_over('none')
+    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
+    if args.embed_motif_method == "random":
+        g = len(dm.motif.unique())
+        colors = np.random.rand(g, 3)
+        # Create a colormap from the random colors
+        cmap = matplotlib.colors.ListedColormap(colors)
+        sns.heatmap(df, cmap=cmap, ax=all_axes[1], cbar_ax=cbar_ax, yticklabels=True)
 
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")    
+        bounds = list(range(-1, 2*g, 2))
+        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
+        cbar_ax.set_yticklabels(list(dm.motif.unique()))
+        
+    else:
+        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+        cmap2.set_over('none')
+        sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        cbar_ax.set_yticklabels(dm.motif.tolist())
 
-    sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
     all_axes[1].set(ylabel="")
     xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust to your desired interval
     xticks_labels = [str(x) for x in xticks_positions]
@@ -847,7 +848,7 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     all_axes[1].set_xticks(xticks_positions)
     all_axes[1].set_xticklabels(xticks_labels,rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major')
-    cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
     
     all_seq_motifs = all_seq_motifs.transpose()
     
@@ -904,28 +905,7 @@ def prepare_for_plotting(msa_result, motif_dict, dm):
     
 
 def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, population_df, max_motif_length):
-    plt.rcParams.update({
-        'font.size': 1,              # Default font size
-        'axes.titlesize': 1,         # Font size for axes titles
-        'axes.labelsize': 1,         # Font size for x and y labels
-        'xtick.labelsize': 1,        # Font size for x tick labels
-        'ytick.labelsize': 1,        # Font size for y tick labels
-        'legend.fontsize': 1,        # Font size for legend
-        'figure.titlesize': 2,        # Font size for figure title
-        'lines.linewidth': 0.1,         # Width of plot lines
-        'axes.linewidth': 0.2,        # Width of axes lines
-        'grid.linewidth': 0.1,        # Width of grid lines
-        'xtick.major.width': 0.1,     # Width of x-axis major ticks
-        'ytick.major.width': 0.1,     # Width of y-axis major ticks
-        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
-        'ytick.minor.width': 0.1,
-        'xtick.major.size': 0.5,        # Length of x-axis major ticks
-        'ytick.major.size': 0.5,        # Length of y-axis major ticks
-        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
-        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
-    })
-
-    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.01)
 
     for col in range(3):
@@ -941,15 +921,25 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
 
     df = df.reindex(seq_order_list)
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
-
-    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-    cmap2.set_over('none')
-
     
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
+    if args.embed_motif_method == "random":
+        g = len(dm.motif.unique())
+        colors = np.random.rand(g, 3)
+        # Create a colormap from the random colors
+        cmap = matplotlib.colors.ListedColormap(colors)
+        sns.heatmap(df, cmap=cmap, ax=all_axes[2], cbar_ax=cbar_ax, yticklabels=True)
 
-    sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        bounds = list(range(-1, 2*g, 2))
+        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
+        cbar_ax.set_yticklabels(list(dm.motif.unique()))
+        
+    else:
+        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+        cmap2.set_over('none')
+        sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        cbar_ax.set_yticklabels(dm.motif.tolist())
     all_axes[2].set(ylabel="")
     xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
     xticks_labels = [str(x) for x in xticks_positions]
@@ -957,7 +947,7 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
     all_axes[2].set_xticks(xticks_positions)
     all_axes[2].set_xticklabels(xticks_labels,rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
-    cbar_ax.set_yticklabels(dm.motif.tolist()) 
+    
     
 
     for i in range(df.shape[0]):
@@ -969,6 +959,7 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
             j += max_motif_length[m]
             m += 1
 
+    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
     seq_population = pd.DataFrame({'seq': seq_order_list})
     seq_population["Sample"] = seq_population.apply(lambda x: x["seq"].split("#")[0], axis = 1)
     
@@ -995,28 +986,7 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
 
 
 def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, max_motif_length):
-    plt.rcParams.update({
-        'font.size': 1,              # Default font size
-        'axes.titlesize': 1,         # Font size for axes titles
-        'axes.labelsize': 1,         # Font size for x and y labels
-        'xtick.labelsize': 1,        # Font size for x tick labels
-        'ytick.labelsize': 1,        # Font size for y tick labels
-        'legend.fontsize': 1,        # Font size for legend
-        'figure.titlesize': 2,        # Font size for figure title
-        'lines.linewidth': 0.1,         # Width of plot lines
-        'axes.linewidth': 0.2,        # Width of axes lines
-        'grid.linewidth': 0.1,        # Width of grid lines
-        'xtick.major.width': 0.1,     # Width of x-axis major ticks
-        'ytick.major.width': 0.1,     # Width of y-axis major ticks
-        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
-        'ytick.minor.width': 0.1,
-        'xtick.major.size': 0.5,        # Length of x-axis major ticks
-        'ytick.major.size': 0.5,        # Length of y-axis major ticks
-        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
-        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
-    })
-
-    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), min(12,0.05 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.01)
 
     for col in range(2):
@@ -1032,12 +1002,24 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     df = df.reindex(seq_order_list)
     all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
-    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-    cmap2.set_over('none')
-
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
+    if args.embed_motif_method == "random":
+        g = len(dm.motif.unique())
+        colors = np.random.rand(g, 3)
+        # Create a colormap from the random colors
+        cmap = matplotlib.colors.ListedColormap(colors)
+        sns.heatmap(df, cmap=cmap, ax=all_axes[1], cbar_ax=cbar_ax, yticklabels=True)
 
-    sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        bounds = list(range(-1, 2*g, 2))
+        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
+        cbar_ax.set_yticklabels(list(dm.motif.unique()))
+
+    else:
+        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+        cmap2.set_over('none')
+        sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        cbar_ax.set_yticklabels(dm.motif.tolist()) 
     all_axes[1].set(ylabel="")
     xticks_positions = np.arange(0, df.shape[1], 10) 
     xticks_labels = [str(x) for x in xticks_positions]
@@ -1045,7 +1027,7 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     all_axes[1].set_xticks(xticks_positions)
     all_axes[1].set_xticklabels(xticks_labels,rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
-    cbar_ax.set_yticklabels(dm.motif.tolist()) 
+
     
     for i in range(df.shape[0]):
         j = 0
@@ -1061,40 +1043,30 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     plt.savefig(figname, bbox_inches = "tight")
 
 def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
-    plt.rcParams.update({
-        'font.size': 1,              # Default font size
-        'axes.titlesize': 1,         # Font size for axes titles
-        'axes.labelsize': 1,         # Font size for x and y labels
-        'xtick.labelsize': 1,        # Font size for x tick labels
-        'ytick.labelsize': 1,        # Font size for y tick labels
-        'legend.fontsize': 1,        # Font size for legend
-        'figure.titlesize': 2,        # Font size for figure title
-        'lines.linewidth': 0.1,         # Width of plot lines
-        'axes.linewidth': 0.2,        # Width of axes lines
-        'grid.linewidth': 0.1,        # Width of grid lines
-        'xtick.major.width': 0.1,     # Width of x-axis major ticks
-        'ytick.major.width': 0.1,     # Width of y-axis major ticks
-        'xtick.minor.width': 0.1,     # Width of x-axis minor ticks
-        'ytick.minor.width': 0.1,
-        'xtick.major.size': 0.5,        # Length of x-axis major ticks
-        'ytick.major.size': 0.5,        # Length of y-axis major ticks
-        'xtick.minor.size': 0.5,        # Length of x-axis minor ticks
-        'ytick.minor.size': 0.5,        # Length of y-axis minor ticks
-    })
-    fig = plt.figure(figsize=(min(max(5, 0.0015 * df.shape[1]), 12), 0.1), dpi = 300)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), 1), dpi = 300)
     spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(1):
         axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
+    all_axes = fig.get_axes()
 
-    cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-    #cmap2 = copy.copy(plt.get_cmap("Spectral"))
-    cmap2.set_over('none')
+    cbar_ax = fig.add_axes([0.95, .2, .02, .6], title="motif")
+    if args.embed_motif_method == "random":
+        g = len(dm.motif.unique())
+        colors = np.random.rand(g, 3)
+        # Create a colormap from the random colors
+        cmap = matplotlib.colors.ListedColormap(colors)
+        sns.heatmap(df, cmap=cmap, ax=all_axes[0], cbar_ax=cbar_ax, yticklabels=True)
 
-    cbar_ax = fig.add_axes([0.95, .2, .02, .6], title="motif")    
-
-    sns.heatmap(df, cmap=cmap2, ax=all_axes[0], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        bounds = list(range(-1, 2*g, 2))
+        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
+        cbar_ax.set_yticklabels(list(dm.motif.unique()))
+    else:
+        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
+        cmap2.set_over('none')
+        sns.heatmap(df, cmap=cmap2, ax=all_axes[0], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
+        cbar_ax.set_yticklabels(dm.motif.tolist()) 
     all_axes[0].set(ylabel="")
     xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust to your desired interval
     xticks_labels = [str(x) for x in xticks_positions]
@@ -1102,7 +1074,6 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     all_axes[0].set_xticks(xticks_positions)
     all_axes[0].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
     all_axes[0].tick_params(axis ='x', which ='major')
-    cbar_ax.set_yticklabels(dm.motif.tolist()) 
     
     i = 0
     j = 0
@@ -1145,10 +1116,10 @@ parser.add_argument('-t', '--title', default = None, dest='title',
                     help ='Title of the plot, default: None')
 
 parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, metavar = "False",
-                    help = 'Boolean (True/False).', default = 'False')
+                    help = 'Run MSA. Boolean (True/False).', default = 'False')
 
 parser.add_argument('-m', '--m', dest = 'motif_guided', type = str, metavar = "False",
-                    help = 'Boolean (True/False).', default = 'False')
+                    help = 'Motif guided motif discovery. Boolean (True/False).', default = 'False')
 
 parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
                     help = 'To use established motifs for analysis by taking a file with ref motifs separated by tabs.', metavar = 'motifs.txt')
@@ -1172,6 +1143,10 @@ parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_ran
 
 parser.add_argument('-f', '--format', default = 'png', dest = 'format',
                     help = 'Image output format (png, pdf, ...). Default: png')
+
+parser.add_argument('-s', '--figure', default = 'True', type = 'str', dest = 'figure',
+                    help = 'Outputs figure. Boolean (True/False). Default: True')
+
 
 sys.getrecursionlimit()
 args = parser.parse_args()
@@ -1236,12 +1211,13 @@ all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
 #all_seq_chr_dict.clear()
 alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
 
-#if args.embed_motif_method == "random":
-   #dimension_reduction_result = 
-#else:
-    #dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
-dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
-
+if args.embed_motif_method == "random":
+    dimension_reduction_result = sort_motifs(all_positions)
+elif args.embed_motif_method in ["UMAP", "MDS"]:
+    dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
+else:
+    print("the coloring should either be 'random', or use 'UMAP' or 'MDS'.")
+    sys.exit()
 
 if sequence_type == "assembly":
     population = args.population
