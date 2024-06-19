@@ -8,7 +8,6 @@ import sys
 
 from Bio import SeqIO
 from Bio import Align
-from multiprocess import Pool
 from itertools import groupby
 import bisect
 from collections import defaultdict
@@ -518,7 +517,7 @@ def assign_chr_to_motif(all_unique_motif, printable_asii):
         motif_dict = dict(zip(all_unique_motif, printable_asii_to_include))
         return motif_dict
 
-def write_seq_in_hex_chr(all_motif_seq, motif_dict, cwd_input, random_num):
+def write_seq_in_hex_chr(all_motif_seq, motif_dict, output, run_msa):
     seq_dict = defaultdict(list)
     for m in all_motif_seq:
         label = m[3]
@@ -527,18 +526,13 @@ def write_seq_in_hex_chr(all_motif_seq, motif_dict, cwd_input, random_num):
     for key in seq_dict:
         seq_dict[key] = " ".join(seq_dict[key])
         seq_dict = dict(seq_dict)
-
-    motif_fasta_file = cwd_input + "_motif_to_hex_" + str(random_num) + ".fa"
-    with open (motif_fasta_file, 'w') as dict_fasta:
-        for item in motif_dict:
-            dict_fasta.write(">" + motif_dict[item] + "\n")
-            dict_fasta.write(item + "\n")
-
-    hex_fasta_file = cwd_input + "_motif_in_hex_" + str(random_num) + ".hex"
-    with open (hex_fasta_file, 'w') as hex_fasta:
-        for item in seq_dict:
-            hex_fasta.write(">" + item + "\n")
-            hex_fasta.write(seq_dict[item] + "\n")
+    
+    if run_msa == "True":
+        hex_fasta_file = output + "_motif_in_hex" + ".hex"
+        with open (hex_fasta_file, 'w') as hex_fasta:
+            for item in seq_dict:
+                hex_fasta.write(">" + item + "\n")
+                hex_fasta.write(seq_dict[item] + "\n")
 
     return seq_dict
 
@@ -551,8 +545,8 @@ def compress_string(string, motif_dict):
     return transformed_string.strip()
 
 
-def write_compressed_seq(seq_chr_dict, motif_dict, cwd_input, random_num):
-    compressed_fasta_file = cwd_input + "_compressed_representation_" + str(random_num) + ".fa"
+def write_compressed_seq(seq_chr_dict, motif_dict, output):
+    compressed_fasta_file = output + "_compressed_representation" + ".fa"
     motif_dict_r = {value: key for key, value in motif_dict.items()}
     with open (compressed_fasta_file, 'w') as compressed_fasta_file:
         for seq in seq_chr_dict:
@@ -701,23 +695,6 @@ def map_score_to_alignment(all_seq_motifs, X_transform_L2):
     df = all_seq_motifs.map(motif_dict.get)
     return df.transpose()
 
-def summarize_motif(all_seq_motifs, reads_name, input_fasta, random_num, seq_distance_df, figtitle):
-    summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
-    summary["index"] = summary.apply(lambda x: x["index"].split("_")[-1], axis = 1)
-    summary = summary.merge(reads_name, left_on = "index", right_on = "nseq", how = "left").drop(columns = ["index", "nseq"]).set_index("read_name").fillna(0)
-    motif_file = input_fasta + "_umap_" + str(random_num) + "_only_consecutive_same_string_motif_count" + ".txt"
-    summary.to_csv(motif_file, sep = "\t")
-    seq_distance_df = seq_distance_df.reset_index().merge(reads_name, left_on = "nseq_1", right_on = "nseq", how = "left").drop(columns = ["nseq_1", "nseq"]).set_index("read_name")
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-    
-    plt.figure(figsize=(25, 50), dpi = 200)
-    d = shc.dendrogram(Z = clusters, labels = seq_distance_df.index, orientation = "right")
-    plt.title(figtitle)
-    figfile = input_fasta + "_umap_" + str(random_num) + "_only_consecutive_same_string_cluster" + f".{args.format}"
-    plt.savefig(figfile, bbox_inches = "tight")
-    plt.clf()
-    return list(reversed(d["ivl"]))
-
 def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, population_df):
     fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.02)
@@ -864,18 +841,21 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
 
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
+    print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
 
 
-def msa_with_characters(cwd_input, random_num):
-    chr_fasta_file = cwd_input + "_motif_in_hex_" + str(random_num) + ".hex"
+def msa_with_characters(output):
+    chr_fasta_file = output + "_motif_in_hex" + ".hex"
     os.system(f"{mafft_path}/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
     os.system(f"mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
     os.system(f"{mafft_path}/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
     msa_result = list(SeqIO.parse(chr_fasta_file.replace(".hex", "_mafft_output.hex"), "fasta"))
+    os.system("rm %s" %(chr_fasta_file))
     os.system("rm %s" %(chr_fasta_file.replace(".hex", ".ASCII")))
     os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
+    os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.hex")))
     return msa_result
 
 def prepare_for_plotting(msa_result, motif_dict, dm):
@@ -982,6 +962,7 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
 
     all_axes[2].title.set_text(figtitle)
     plt.yticks(rotation=0)
+    print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
 
@@ -1040,6 +1021,7 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
 
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
+    print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
 def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
@@ -1087,6 +1069,7 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
 
     all_axes[0].title.set_text(figtitle)
     plt.yticks(rotation=0)
+    print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
 
@@ -1144,8 +1127,11 @@ parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_ran
 parser.add_argument('-f', '--format', default = 'png', dest = 'format',
                     help = 'Image output format (png, pdf, ...). Default: png')
 
-parser.add_argument('-s', '--figure', default = 'True', type = 'str', dest = 'figure',
+parser.add_argument('-s', '--figure', default = 'True', type = str, dest = 'figure', 
                     help = 'Outputs figure. Boolean (True/False). Default: True')
+
+parser.add_argument('-o', '--output_prefix', type = str, dest = 'output_prefix', required = True,
+                    help = 'Prefix of output files.')
 
 
 sys.getrecursionlimit()
@@ -1167,6 +1153,8 @@ min_kmer_size = args.min_kmer_size
 run_msa = args.run_msa
 motif_guided = args.motif_guided
 ref_motifs = args.ref_motifs
+output_prefix = args.output_prefix
+figure = args.figure
 
 if args.profile:
     #imports for profiling
@@ -1175,12 +1163,18 @@ if args.profile:
     print('Profiling enabled. MultiProcessing disabled.')
     pr = cProfile.Profile()
     pr.enable()
-    pool_class = DummyPool
-else:
-    pool_class = Pool
 
-random_num = str(random()).replace('.', '')
-cwd_input = os.path.join(os.getcwd(), os.path.basename(input_fasta_to_count))
+if os.path.isabs(output_prefix):
+    prefix_dir, prefix = os.path.split(output_prefix)
+else:
+    prefix_dir = os.getcwd()
+    prefix = output_prefix
+if not os.path.exists(prefix_dir):
+    print(f"Error: The directory '{prefix_dir}' does not exist.")
+    sys.exit(1)
+output_file = os.path.join(prefix_dir, f"{prefix}_result.txt")
+output = os.path.join(prefix_dir, prefix)
+
 all_seq_dict = parse_fasta(input_fasta_to_count)
 seq_concat, seq_index = prepare_suffix_string(all_seq_dict)
 
@@ -1202,71 +1196,73 @@ unique_motifs = list(unique_motifs)
 
 printable_asii_list = generate_hex_chr_list()
 motif_chr_dict = assign_chr_to_motif(unique_motifs, printable_asii_list)
-all_seq_chr_dict = write_seq_in_hex_chr(all_positions, motif_chr_dict, cwd_input, random_num)
-write_compressed_seq(all_seq_chr_dict, motif_chr_dict, cwd_input, random_num)
+all_seq_chr_dict = write_seq_in_hex_chr(all_positions, motif_chr_dict, output, run_msa)
+write_compressed_seq(all_seq_chr_dict, motif_chr_dict, output)
 
 print("tandem repeat decomposition DONE")
 
-all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
-#all_seq_chr_dict.clear()
-alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
+if figure == "True":
+    all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
+    #all_seq_chr_dict.clear()
+    alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
 
-if args.embed_motif_method == "random":
-    dimension_reduction_result = sort_motifs(all_positions)
-elif args.embed_motif_method in ["UMAP", "MDS"]:
-    dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
-else:
-    print("the coloring should either be 'random', or use 'UMAP' or 'MDS'.")
-    sys.exit()
+    if args.embed_motif_method == "random":
+        dimension_reduction_result = sort_motifs(all_positions)
+    elif args.embed_motif_method in ["UMAP", "MDS"]:
+        dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
+    else:
+        print("the coloring should either be 'random', or use 'UMAP' or 'MDS'.")
+        sys.exit(1)
 
-if sequence_type == "assembly":
-    population = args.population
-    population_metadata = pd.read_csv(population, sep = "\t", header = None)
-    population_metadata.columns = ["Sample", "Group"]
-    if run_msa == "True":
-        print("running MSA")
-        msa = msa_with_characters(cwd_input, random_num)
-        print("MSA DONE")
-        msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-        figfile = cwd_input + "_" + str(random_num) + "_msa" + f".{args.format}"
-        print("generating figure")
-        plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
-    elif run_msa == "False":
+    if sequence_type == "assembly":
+        population = args.population
+        population_metadata = pd.read_csv(population, sep = "\t", header = None)
+        population_metadata.columns = ["Sample", "Group"]
+        if run_msa == "True":
+            print("running MSA")
+            msa = msa_with_characters(output)
+            print("MSA DONE")
+            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
+            figfile = output + "_msa" + f".{args.format}"
+            print("generating figure")
+            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
+        elif run_msa == "False":
+            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+            figfile = output + f".{args.format}"
+            print("generating figure")
+            plot_df(df_to_plot, dimension_reduction_result, all_positions, all_seq_distance_df, figfile, title, population_metadata)
+
+    elif sequence_type == "reads":
+        if run_msa == "True":
+            print("running MSA")
+            msa = msa_with_characters(output)
+            print("MSA DONE")
+            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
+            figfile = output + "_reads_msa" + f".{args.format}"
+            print("generating figure")
+            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
+        elif run_msa == "False":
+            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+            figfile = output + "_reads" + f".{args.format}"
+            print("generating figure")
+            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title)
+
+    elif sequence_type == "single":
         df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-        figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
-        print("generating figure")
-        plot_df(df_to_plot, dimension_reduction_result, all_positions, all_seq_distance_df, figfile, title, population_metadata)
-
-elif sequence_type == "reads":
-    if run_msa == "True":
-        msa = msa_with_characters(cwd_input, random_num)
-        msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-        figfile = cwd_input + "_reads_" + str(random_num) + "_msa" + f".{args.format}"
-        plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
-    elif run_msa == "False":
-        df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-        figfile = cwd_input + "_reads_" + str(random_num) + f".{args.format}"
-        plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title)
-
-elif sequence_type == "single":
-    df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
-    figfile = cwd_input + "_" + str(random_num) + f".{args.format}"
-    plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
+        figfile = output + "_single_read" + f".{args.format}"
+        plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
 
 
-if args.profile:
-    pr.disable()
-    print('Storing profiling results in stats.txt...')
-    with open('stats.txt','w') as f:
-        sortby = SortKey.CUMULATIVE
-        ps = pstats.Stats(pr, stream=f).sort_stats(sortby)
-        ps.print_stats()
-        ps.print_callers()
-        ps.print_callees()
+    if args.profile:
+        pr.disable()
+        print('Storing profiling results in stats.txt...')
+        with open('stats.txt','w') as f:
+            sortby = SortKey.CUMULATIVE
+            ps = pstats.Stats(pr, stream=f).sort_stats(sortby)
+            ps.print_stats()
+            ps.print_callers()
+            ps.print_callees()
 
-print('DONE')
-        
-
-
+    print('DONE')
 
 
