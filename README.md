@@ -40,3 +40,5 @@ The population file ```population.txt``` should be a tab separated file with the
 
 To run multiple sequence alignment on the compressed representation of the sequence, set ```-msa``` to ```True```. <br>
 To run the algorithm with a set of known motifs, set ```-m``` to ```True``` and provide the motifs with ```-motifs motifs.txt```. The motif file ```motifs.txt``` should contain the motifs separated with tab. 
+<br>
+To use random categorical colors for motifs, set ```-e``` to ```random```. To project motifs onto a continuous color scale, set ```-e``` to ```UMAP``` or ```MDS``` for dimension reduction based on motif similarities.
