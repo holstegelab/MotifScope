@@ -36,13 +36,15 @@ motifscope --sequence-type assembly [-i input.fa] [-mink 2] [-maxk 10] [-t title
 motifscope --sequence-type single [-i input.fa] [-mink 2] [-maxk 10] [-t title] 
 ```
 The description of the sequences in ```input.fa``` should start with ```>sample_name#```. <br>
+
 The population file ```population.txt``` should be a tab separated file with the first column being the sample names and the second column being the population. 
 
 To run multiple sequence alignment on the compressed representation of the sequence, set ```-msa``` to ```True```. <br>
-To run the algorithm with a set of known motifs, set ```-m``` to ```True``` and provide the motifs with ```-motifs motifs.txt```. The motif file ```motifs.txt``` should contain the motifs separated with tab. 
-<br>
-To use random categorical colors for motifs, set ```-e``` to ```random```. To project motifs onto a continuous color scale, set ```-e``` to ```UMAP``` or ```MDS``` for dimension reduction based on motif similarities.
-<br>
+
+To run the algorithm with a set of known motifs, set ```-m``` to ```True``` and provide the motifs with ```-motifs motifs.txt```. The motif file ```motifs.txt``` should contain the motifs separated with tab. <br>
+
+To use random categorical colors for motifs, set ```-e``` to ```random```. To project motifs onto a continuous color scale, set ```-e``` to ```UMAP``` or ```MDS``` for dimension reduction based on motif similarities. <br>
+
 The repeat compositions are output in a fasta file. For example,
 ```bash
 >HG002#2#JAHKSD010000034.1:9910981-9913041/rc
