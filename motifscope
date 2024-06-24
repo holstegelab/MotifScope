@@ -19,6 +19,7 @@ import seaborn as sns
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
+from matplotlib.collections import PatchCollection
 
 from random import random
 import scipy.cluster.hierarchy as shc
@@ -451,7 +452,7 @@ def get_label(value,range_starts,labels):
     idx = bisect.bisect_right(range_starts, value) - 1
     return labels[idx], range_starts[idx]
 
-def transform_to_df(index, marked_positions, seq_dict, seq_concat):
+def get_all_positions(index, marked_positions, seq_dict, seq_concat):
     all_marked_positions = set(range(len(seq_concat)))
     marked = []
     for t in marked_positions:
@@ -483,6 +484,9 @@ def transform_to_df(index, marked_positions, seq_dict, seq_concat):
     for label, start in [get_label(m[0], starts, ids)]
     ]
 
+    return all_motif_seq, 
+
+def transform_to_df(all_motif_seq):
     max_row_index = max(end_row for _, end_row, _, _ in all_motif_seq)
     columns = list(set(column for _, _, _, column in all_motif_seq))
 
@@ -494,8 +498,8 @@ def transform_to_df(index, marked_positions, seq_dict, seq_concat):
         values_array[start_row:end_row, col_idx] = value
 
     df = pd.DataFrame(values_array, index=range(max_row_index), columns=columns)
+    return df
 
-    return all_motif_seq, df
 
 def generate_hex_chr_list():
     usable_hex = list(range(1,256))
@@ -748,8 +752,8 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
         length = len(m[2])  # Length of the motif
         rectangles.append(Rectangle((start_col, row_index), length, 1, fill=False, edgecolor='black', lw=0.02, clip_on=False))
 
-    for rect in rectangles:
-        all_axes[2].add_patch(rect)
+    p = PatchCollection(rectangles, match_original = True)
+    all_axes[2].add_collection(p)
     
     cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
     seq_population = pd.DataFrame({'seq': seq_order_list})
@@ -829,15 +833,18 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     
     all_seq_motifs = all_seq_motifs.transpose()
     
+    rectangles = []
     for i in range(all_seq_motifs.shape[1]):
         j = 0
         while j < all_seq_motifs.shape[0]:
             if str(all_seq_motifs.iloc[j, i]) != "nan":
-                all_axes[1].add_patch(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
+                rectangles.append(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
                 j += len(all_seq_motifs.iloc[j, i])
-                
             else:
                 j += 1
+
+    p = PatchCollection(rectangles, match_original = True)
+    all_axes[1].add_collection(p)
 
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
@@ -929,15 +936,17 @@ def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, popu
     all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
     
     
-
+    rectangles = []
     for i in range(df.shape[0]):
         j = 0
         m = 0
         while j < df.shape[1]:
             if str(df.iloc[i, j]) != "nan":
-                all_axes[2].add_patch(Rectangle((j, i), max_motif_length[m], 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
+                rectangles.append(Rectangle((j, i), max_motif_length[m], 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
             j += max_motif_length[m]
             m += 1
+    p = PatchCollection(rectangles, match_original = True)
+    all_axes[2].add_collection(p)
 
     cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
     seq_population = pd.DataFrame({'seq': seq_order_list})
@@ -1009,15 +1018,17 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     all_axes[1].set_xticklabels(xticks_labels,rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
 
-    
+    rectangles = []
     for i in range(df.shape[0]):
         j = 0
         m = 0
         while j < df.shape[1]:
             if str(df.iloc[i, j]) != "nan":
-                all_axes[1].add_patch(Rectangle((j, i), max_motif_length[m], 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
+                rectangles.append(Rectangle((j, i), max_motif_length[m], 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
             j += max_motif_length[m]
             m += 1
+    p = PatchCollection(rectangles, match_original = True)
+    all_axes[1].add_collection(p)
 
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
@@ -1059,13 +1070,16 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     
     i = 0
     j = 0
+    rectangles = []
     while j < all_seq_motifs.shape[0]:
         if str(all_seq_motifs.iloc[j, i]) != "nan":
-            all_axes[0].add_patch(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
+            rectangles.append(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
             j += len(all_seq_motifs.iloc[j, i])
             
         else:
             j += 1
+    p = PatchCollection(rectangles, match_original = True)
+    all_axes[0].add_collection(p)
 
     all_axes[0].title.set_text(figtitle)
     plt.yticks(rotation=0)
@@ -1073,12 +1087,15 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     plt.savefig(figname, bbox_inches = "tight")
 
 
+class CustomAction(argparse.Action):
+    def __call__(self, parser, namespace, values, option_string=None):
+        setattr(namespace, self.dest, values)
 
 #######################
 
 
 parser = argparse.ArgumentParser(description='MotifScope')
-parser.add_argument('--sequence-type', dest = 'sequence_type', metavar = "[assembly / reads / single]", 
+parser.add_argument('--sequence-type', dest = 'sequence_type', choices=['assembly', 'reads', 'single'],
                     help ='Type of input sequences [assembly / reads / single].', type = str,
                     required = True)
 
@@ -1086,7 +1103,7 @@ parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count'
                     metavar = "input.fa", type = str,
                     help ='Input fasta file to analyze')
 
-parser.add_argument('-mink', '--min_kmer', default = 2, dest = 'min_kmer_size',
+parser.add_argument('-mink', '--min_kmer', action=CustomAction, default = 2, dest = 'min_kmer_size',
                     metavar = 2, type = int,
                     help ='Minimum k to count')
 
@@ -1098,11 +1115,11 @@ parser.add_argument('-t', '--title', default = None, dest='title',
                     metavar = "title", type=str,
                     help ='Title of the plot, default: None')
 
-parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, metavar = "False",
-                    help = 'Run MSA. Boolean (True/False).', default = 'False')
+parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False'], default = "False",
+                    help = 'Run MSA. Boolean (True/False).')
 
-parser.add_argument('-m', '--m', dest = 'motif_guided', type = str, metavar = "False",
-                    help = 'Motif guided motif discovery. Boolean (True/False).', default = 'False')
+parser.add_argument('-g', action=CustomAction, dest = 'motif_guided', type = str, choices=['True', 'False'], default = "False",
+                    help = 'Motif guided motif discovery. Boolean (True/False).')
 
 parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
                     help = 'To use established motifs for analysis by taking a file with ref motifs separated by tabs.', metavar = 'motifs.txt')
@@ -1112,30 +1129,32 @@ parser.add_argument('-p', '--population', dest = 'population', required = False,
                     help = 'Path to population metadata file')
 
 parser.add_argument('-mp', '--mafft_path', default = None, dest = 'mafft_path', required = False, 
-                    metavar = "mafft", type=str,
+                    metavar = "./mafft", type=str,
                     help = 'Path to mafft, default: $PREFIX_CONDA/libexec/mafft')
 
-parser.add_argument('-prof', '--profile', action = 'store_true', dest = 'profile', default = False,
+parser.add_argument('-prof', '--profile', type = str, dest = 'profile', default = False, choices=['True', 'False'],
                      help = 'Enable profiling (stored in stats.txt)')
 
-parser.add_argument('-e', '--embed_motif_method', default = 'UMAP', dest= 'embed_motif_method', 
+parser.add_argument('-e', '--embed_motif_method', default = 'UMAP', dest= 'embed_motif_method', choices=['UMAP', 'MDS', 'random'],
                      help = 'Embedding method for motif color scale (option: MDS, UMAP or random), default: UMAP')
 
 parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_rank_embed', type = float,
                      help = 'Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
 
-parser.add_argument('-f', '--format', default = 'png', dest = 'format',
-                    help = 'Image output format (png, pdf, ...). Default: png')
+parser.add_argument('-format', '--format', default = 'png', dest = 'format', choices=['png', 'pdf'],
+                    help = 'Image output format (png, pdf). Default: png')
 
-parser.add_argument('-s', '--figure', default = 'True', type = str, dest = 'figure', 
+parser.add_argument('-figure', '--figure', default = 'True', type = str, dest = 'figure', 
                     help = 'Outputs figure. Boolean (True/False). Default: True')
 
-parser.add_argument('-o', '--output_prefix', type = str, dest = 'output_prefix', required = True,
+parser.add_argument('-o', '--output_prefix', type = str, dest = 'output_prefix', required = True, metavar = "ouput",
                     help = 'Prefix of output files.')
 
+args, unknown = parser.parse_known_args()
+if unknown:
+    parser.error(f"Unknown arguments: {' '.join(unknown)}")
 
-sys.getrecursionlimit()
-args = parser.parse_args()
+#args = parser.parse_args()
 
 if args.run_msa == "True":
     mafft_path = os.path.join(os.getenv('CONDA_PREFIX'), 'libexec', 'mafft')
@@ -1189,7 +1208,7 @@ elif motif_guided == "True":
     candidate_kmer, masked_postion, masked_seq = select_all_kmer_motif_guided(seq_concat, seq_index, min_kmer_size, max_kmer_size, ref_motifs_list)
 
 masked_postion = mask_all_seq(candidate_kmer, masked_postion, masked_seq)
-all_positions, all_seq_df = transform_to_df(seq_index, masked_postion, all_seq_dict, seq_concat)
+all_positions = get_all_positions(seq_index, masked_postion, all_seq_dict, seq_concat)
 
 unique_motifs = {m[2] for m in all_positions}
 unique_motifs = list(unique_motifs)
@@ -1202,6 +1221,7 @@ write_compressed_seq(all_seq_chr_dict, motif_chr_dict, output)
 print("tandem repeat decomposition DONE")
 
 if figure == "True":
+    all_seq_df = transform_to_df(all_positions)
     all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
     #all_seq_chr_dict.clear()
     alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
@@ -1250,6 +1270,7 @@ if figure == "True":
     elif sequence_type == "single":
         df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
         figfile = output + "_single_read" + f".{args.format}"
+        print("generating figure")
         plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
 
 
