@@ -484,7 +484,7 @@ def get_all_positions(index, marked_positions, seq_dict, seq_concat):
     for label, start in [get_label(m[0], starts, ids)]
     ]
 
-    return all_motif_seq, 
+    return all_motif_seq
 
 def transform_to_df(all_motif_seq):
     max_row_index = max(end_row for _, end_row, _, _ in all_motif_seq)
@@ -1087,10 +1087,6 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
     plt.savefig(figname, bbox_inches = "tight")
 
 
-class CustomAction(argparse.Action):
-    def __call__(self, parser, namespace, values, option_string=None):
-        setattr(namespace, self.dest, values)
-
 #######################
 
 
@@ -1103,13 +1099,13 @@ parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count'
                     metavar = "input.fa", type = str,
                     help ='Input fasta file to analyze')
 
-parser.add_argument('-mink', '--min_kmer', action=CustomAction, default = 2, dest = 'min_kmer_size',
-                    metavar = 2, type = int,
-                    help ='Minimum k to count')
+parser.add_argument('-mink', '--min_kmer', default = 2, dest = 'min_kmer_size',
+                    type = int, metavar = 2,
+                    help ='Minimum length of motif to characterize')
 
 parser.add_argument('-maxk', '--max_kmer', default = 10, dest='max_kmer_size',
-                    metavar=10, type=int,
-                    help ='Maximum k to count')
+                    type=int, metavar = 10,
+                    help ='Maximum length of motif to characterize')
 
 parser.add_argument('-t', '--title', default = None, dest='title',
                     metavar = "title", type=str,
@@ -1118,19 +1114,19 @@ parser.add_argument('-t', '--title', default = None, dest='title',
 parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False'], default = "False",
                     help = 'Run MSA. Boolean (True/False).')
 
-parser.add_argument('-g', action=CustomAction, dest = 'motif_guided', type = str, choices=['True', 'False'], default = "False",
-                    help = 'Motif guided motif discovery. Boolean (True/False).')
-
-parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
-                    help = 'To use established motifs for analysis by taking a file with ref motifs separated by tabs.', metavar = 'motifs.txt')
-
-parser.add_argument('-p', '--population', dest = 'population', required = False, 
-                    metavar = "metadata.txt", type=str,
-                    help = 'Path to population metadata file')
-
 parser.add_argument('-mp', '--mafft_path', default = None, dest = 'mafft_path', required = False, 
                     metavar = "./mafft", type=str,
                     help = 'Path to mafft, default: $PREFIX_CONDA/libexec/mafft')
+
+parser.add_argument('-g', dest = 'motif_guided', type = str, choices=['True', 'False'], default = "False",
+                    help = 'Known motif guided motif discovery. Boolean (True/False).')
+
+parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
+                    help = 'To use established motifs for analysis by taking a file with known motifs separated by tabs. Required if using known motif guided mode', metavar = 'motifs.txt')
+
+parser.add_argument('-p', '--population', dest = 'population', required = False, 
+                    metavar = "metadata.txt", type=str,
+                    help = 'Path to a tab separated population metadata file. Required if using "assembly" mode')
 
 parser.add_argument('-prof', '--profile', type = str, dest = 'profile', default = False, choices=['True', 'False'],
                      help = 'Enable profiling (stored in stats.txt)')
@@ -1144,7 +1140,7 @@ parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_ran
 parser.add_argument('-format', '--format', default = 'png', dest = 'format', choices=['png', 'pdf'],
                     help = 'Image output format (png, pdf). Default: png')
 
-parser.add_argument('-figure', '--figure', default = 'True', type = str, dest = 'figure', 
+parser.add_argument('-figure', '--figure', default = 'True', type = str, dest = 'figure', choices=['True', 'False'],
                     help = 'Outputs figure. Boolean (True/False). Default: True')
 
 parser.add_argument('-o', '--output_prefix', type = str, dest = 'output_prefix', required = True, metavar = "ouput",
@@ -1153,6 +1149,12 @@ parser.add_argument('-o', '--output_prefix', type = str, dest = 'output_prefix',
 args, unknown = parser.parse_known_args()
 if unknown:
     parser.error(f"Unknown arguments: {' '.join(unknown)}")
+
+if args.motif_guided == 'True' and not args.ref_motifs:
+    parser.error('-motif is required when -g is "True"')
+if args.sequence_type == 'assembly' and not args.population:
+    parser.error('-p is required when --sequence_type is "assembly"')
+
 
 #args = parser.parse_args()
 
@@ -1230,9 +1232,6 @@ if figure == "True":
         dimension_reduction_result = sort_motifs(all_positions)
     elif args.embed_motif_method in ["UMAP", "MDS"]:
         dimension_reduction_result = run_umap(alignment_score_matrix, method=args.embed_motif_method, rank=args.motif_rank_embed)
-    else:
-        print("the coloring should either be 'random', or use 'UMAP' or 'MDS'.")
-        sys.exit(1)
 
     if sequence_type == "assembly":
         population = args.population
