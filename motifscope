@@ -783,7 +783,7 @@ def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, populatio
     plt.savefig(figname, bbox_inches = "tight")
 
 
-def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
+def plot_df_reads(df, dm, all_motif_seq, seq_distance_df, figname, figtitle):
     fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
@@ -791,8 +791,8 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
         axs = fig.add_subplot(spec[0, col])
     all_axes = fig.get_axes()    
 
-    summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
-    summary = summary.set_index("index")
+    #summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
+    #summary = summary.set_index("index")
     clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
@@ -800,8 +800,8 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     seq_order_list = list(reversed(d["ivl"]))
 
     df = df.reindex(seq_order_list)
-    all_seq_motifs = all_seq_motifs.transpose()
-    all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
+    #all_seq_motifs = all_seq_motifs.transpose()
+    #all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
 
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
     if args.embed_motif_method == "random":
@@ -831,21 +831,18 @@ def plot_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle):
     all_axes[1].tick_params(axis ='x', which ='major')
     
     
-    all_seq_motifs = all_seq_motifs.transpose()
-    
+    row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
+
     rectangles = []
-    for i in range(all_seq_motifs.shape[1]):
-        j = 0
-        while j < all_seq_motifs.shape[0]:
-            if str(all_seq_motifs.iloc[j, i]) != "nan":
-                rectangles.append(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
-                j += len(all_seq_motifs.iloc[j, i])
-            else:
-                j += 1
+    for m in all_motif_seq:
+        row_index = row_index_map[m[3]]  # Get the row index based on the sequence order list
+        start_col = m[0]  # Starting column index
+        length = len(m[2])  # Length of the motif
+        rectangles.append(Rectangle((start_col, row_index), length, 1, fill=False, edgecolor='black', lw=0.02, clip_on=False))
 
     p = PatchCollection(rectangles, match_original = True)
     all_axes[1].add_collection(p)
-
+    
     all_axes[1].title.set_text(figtitle)
     plt.yticks(rotation=0)
     print("saving figure")
@@ -1264,7 +1261,7 @@ if figure == "True":
             df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
             figfile = output + "_reads" + f".{args.format}"
             print("generating figure")
-            plot_df_reads(df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title)
+            plot_df_reads(df_to_plot, dimension_reduction_result, all_positions, all_seq_distance_df, figfile, title)
 
     elif sequence_type == "single":
         df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
