@@ -16,4 +16,5 @@ dependencies:
   - seaborn
   - mafft=7.520=h031d066_2
   - levenshtein==0.21.1
+  - scipy=1.13.0
 prefix: /home/holstegelab-yzhang/miniconda3/envs/tmp
