@@ -1092,8 +1092,8 @@ def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
 
 parser = argparse.ArgumentParser(description='MotifScope')
 parser.add_argument('--sequence-type', dest = 'sequence_type', choices=['assembly', 'reads', 'single'],
-                    help ='Type of input sequences [assembly / reads / single].', type = str,
-                    required = True)
+                    help ='Type of input sequences [assembly / reads / single].', type = str, default = 'reads',
+                    required = False)
 
 parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count', required = True, 
                     metavar = "input.fa", type = str,
@@ -1181,7 +1181,7 @@ if args.profile:
     #imports for profiling
     import cProfile, pstats
     from pstats import SortKey
-    print('Profiling enabled. MultiProcessing disabled.')
+    print('Profiling enabled.')
     pr = cProfile.Profile()
     pr.enable()
 
@@ -1273,16 +1273,16 @@ if figure == "True":
         plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
 
 
-    if args.profile:
-        pr.disable()
-        print('Storing profiling results in stats.txt...')
-        with open('stats.txt','w') as f:
-            sortby = SortKey.CUMULATIVE
-            ps = pstats.Stats(pr, stream=f).sort_stats(sortby)
-            ps.print_stats()
-            ps.print_callers()
-            ps.print_callees()
+if args.profile:
+    pr.disable()
+    print('Storing profiling results in stats.txt...')
+    with open('stats.txt','w') as f:
+        sortby = SortKey.CUMULATIVE
+        ps = pstats.Stats(pr, stream=f).sort_stats(sortby)
+        ps.print_stats()
+        ps.print_callers()
+        ps.print_callees()
 
-    print('DONE')
+print('DONE')
 
 
