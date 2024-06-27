@@ -4,16 +4,16 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python==3.10
-  - numpy
-  - pandas==2.2.1
-  - setuptools=69.2.0=pyhd8ed1ab_0
+  - python
+  - numpy==1.26.4
+  - pandas
   - matplotlib
-  - biopython==1.81
-  - multiprocess==0.70.14
-  - umap-learn==0.5.3
+  - biopython
+  - multiprocess
+  - umap-learn
   - scikit-learn
   - seaborn
-  - mafft=7.520=h031d066_2
-  - levenshtein==0.21.1
-prefix: /home/holstegelab-yzhang/miniconda3/envs/tmp
+  - levenshtein
+  - ca-certificates
+  - certifi
+  - openssl
