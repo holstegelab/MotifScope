@@ -17,3 +17,5 @@ dependencies:
   - ca-certificates
   - certifi
   - openssl
+  - mafft=7.520=h031d066_2
+  - scipy=1.13.0
