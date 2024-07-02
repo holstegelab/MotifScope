@@ -1437,7 +1437,7 @@ if figure == "True":
 
     if sequence_type == "assembly":
         population = args.population
-        population_metadata = pd.read_csv(population, sep = "\t", header = 0)
+        population_metadata = pd.read_csv(population, sep = "\t", header = None)
         population_metadata.columns = ["Sample", "Group"]
         if run_msa == "True":
             print("running MSA")
