@@ -679,8 +679,9 @@ def get_motif_pairwise_distance(motif_list):
 def sort_motifs(all_seq_motifs):
     motif_counts = defaultdict(int)
     for m in all_seq_motifs:
-        motif = m[2]
-        motif_counts[motif] += 1
+        if len(m[2]) > 1:
+            motif = m[2]
+            motif_counts[motif] += 1
     motif_counts = dict(motif_counts)
     sorted_motifs = sorted(motif_counts.items(), key=lambda x: x[1], reverse=True)
 
@@ -703,9 +704,9 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
        :rank: float, between 0 and 1. Transforms between original embedding (0.0) and a fully ranked embedding (1.0, i.e. only the ordering of the motifs is preserved).
        :norm: bool, whether to normalize the distance matrix by the geometric mean of the sequence lengths.
     """
-    if alignment_score_matrix.shape[0] == 1:
-        X_transform_L2 = pd.DataFrame(columns = ["dimension_reduction", "motifs"])
-        X_transform_L2["motif"] = dm.columns
+    if dm.shape[0] == 1:
+        X_transform_L2 = pd.DataFrame(columns = ["dimension_reduction", "motif"])
+        X_transform_L2["motif"] = dm[0].columns
         X_transform_L2["dimension_reduction"] = 0
     else:
         n_neighbors = min(10,max(5,dm.shape[0]/2)) # 10 or half of the number of motifs, whichever is smaller, with a minimum of 5
@@ -783,87 +784,8 @@ def map_grouped_score_to_alignment(grouped_motif_seq, X_transform_L2):
 
     return ngrouped_motif_seq
 
-def heatmap(seq_order, grouped_motif_seq, all_seq_dict, sequence_lengths, dim_reduction, cmap, ax, cbar_ax, linewidth=0.25, cbar_kws = None, edgecolor='silver'):
-    assert len(seq_order) == len(grouped_motif_seq), "Number of sequences in seq_order and grouped_motif_seq should be the same"
-    assert len(seq_order) == len(sequence_lengths), "Number of sequences in seq_order and sequence_lengths should be the same"
-    
 
-    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
-    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
-    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
-    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
-    for nuc, color in list(convert_color.items()):
-        convert_color[nuc.lower()] = color
-        
-
-    nmotifs = dim_reduction['motif'].nunique()
-    umotifs = dim_reduction['motif'].tolist()
-    cmap = matplotlib.colors.ListedColormap(cmap(np.linspace(0,1.0,nmotifs)))
-    norm = matplotlib.colors.BoundaryNorm(np.arange(nmotifs+1) - 0.5, cmap.N)
-
-    colorcache = {}
-    def cache_color(value):
-        if value not in colorcache:
-            colorcache[value] = cmap(norm(value))
-        return colorcache[value]
-
-        
-    singlebase_rectangles = [] 
-    rectangles = []
-    motif_sep_lines = []
-    for seq in seq_order:
-        motifs = grouped_motif_seq[seq]
-        slength = sequence_lengths[seq]
-        ypos = seq_order.index(seq)
-        for start, end, motif, count, color_value in motifs:
-            if count == 0: #single bases
-                s = len(motif)
-                if s == 1: #fast path
-                    color = convert_color[motif]
-                    singlebase_rectangles.append(Rectangle((start, ypos), 1, 1, fill=True, linestyle='none', lw = 0, facecolor=color, clip_on=False))
-                else: #use quadmesh for faster rendering
-                    xcolors = [convert_color[b] for b in motif]
-                    xpos = np.linspace(start, end, len(motif) + 1)
-                    coords = np.zeros((2, len(xpos), 2))
-                    coords[0,:,0] = xpos
-                    coords[1,:,0] = xpos
-                    coords[0,:,1] = ypos
-                    coords[1,:,1] = ypos + 1
-
-                    #quadmesh_coords = np.array([[[x, ypos], [x, ypos + 1], [x + 1, ypos + 1], [x + 1, ypos]] for x in xpos])
-
-                    q = QuadMesh(coords, facecolors=xcolors, rasterized=False, edgecolor='face', lw=0)
-                    ax.add_collection(q)
-            else: 
-                assert end <= slength, f"End position {end} of motif {motif} is larger than the sequence length {slength}"
-                color = cache_color(color_value)
-                rectangles.append(Rectangle((start, ypos), end - start, 1, fill=True, edgecolor=edgecolor, lw=linewidth, facecolor=color, clip_on=False))
-                if count > 1:
-                    sep_xpos = np.linspace(start, end, count + 1)[1:-1]
-                    motif_sep_lines.extend([((x, ypos), (x, ypos + 1)) for x in sep_xpos])
-    p = PatchCollection(singlebase_rectangles, match_original = True)
-    ax.add_collection(p)
-
-    p = PatchCollection(rectangles, match_original = True)            
-    ax.add_collection(p)
-    l = LineCollection(motif_sep_lines, color=edgecolor, lw=linewidth)
-    ax.add_collection(l)
-    ax.set_ylim(0, len(grouped_motif_seq))
-    
-    ypos = np.arange(len(seq_order))
-    #rectangles = [Rectangle((0, y), sequence_lengths[seq], 1, fill=False, edgecolor='gray', lw=linewidth, facecolor=edgecolor, clip_on=False) for seq,y in zip(seq_order,ypos)]
-    rectangles = [Rectangle((0, y), sequence_lengths[seq], 1, fill=False, edgecolor='black', lw=linewidth, facecolor=edgecolor, clip_on=False) for seq,y in zip(seq_order,ypos)]
-    p = PatchCollection(rectangles, match_original = True)
-    ax.add_collection(p)
-
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=np.arange(nmotifs), spacing='uniform', orientation='vertical')
-    cbar_ax.set_yticklabels(umotifs)
-    cb.outline.set_linewidth(0.1)
-    cb.outline.set_edgecolor('black')
-    return cb
-
-
-def heatmap_new(seq_order, grouped_motif_seq, all_seq_dict, sequence_lengths, dim_reduction, cmap, ax, cbar_ax, linewidth=0.25, cbar_kws = None, edgecolor='black'):
+def heatmap(seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, cmap, ax, cbar_ax, linewidth=0.25, cbar_kws = None, edgecolor='black'):
     assert len(seq_order) == len(grouped_motif_seq), "Number of sequences in seq_order and grouped_motif_seq should be the same"
     assert len(seq_order) == len(sequence_lengths), "Number of sequences in seq_order and sequence_lengths should be the same"
     
@@ -993,88 +915,7 @@ def pop_heatmap(data, poplabels, ax, cbar, cmap):
     cb.outline.set_edgecolor('black')
 
 
-
-
-
-
-def plot_df_alt(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle, population_df):
-    assert len(grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
-
-    sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
-    max_seq_length = max(sequence_lengths.values())
-    nsamples = len(grouped_motif_seq)
-
-    fig = plt.figure(figsize=(min(max(50, 0.015 * max_seq_length), 120), min(120,0.5 * nsamples)), dpi = 300)
-    spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,0.35,40,10], height_ratios=[1], wspace=0.0)
-
-    for col in range(3):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-
-    d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, bottom=False, labelright=False, labelleft=False,labeltop=False)
-    
-
-    seq_order_list = list(d["ivl"])
-    samples = [seq.split("#")[0] for seq in seq_order_list]
-    
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    if args.embed_motif_method == "random":
-        g = len(dim_reduction.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        heatmap(seq_order_list, grouped_motif_seq, all_seq_dict, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[2], cbar_ax=cbar_ax)
-
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        #scale colorbar to the range of the dimension reduction
-
-        heatmap(seq_order_list, grouped_motif_seq, all_seq_dict, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax)
-
-    all_axes[2].set(ylabel="")
-    xticks_positions = np.arange(0, max_seq_length, 50)  # Adjust 100 to your desired interval
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False, rotation=0)
-    all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels, rotation=90)
-    all_axes[2].tick_params(axis ='x', which ='major')
-    
-    all_axes[2].set_yticks(np.arange(nsamples))
-    all_axes[2].set_yticklabels(samples)
-    
-    row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
-
-    
-    #Provide population information
-    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
-    
-    
-    group_dict = {sample: group for sample, group in zip(population_df['Sample'], population_df['Group']) if sample in samples}
-    unique_groups = sorted(list(set(group_dict.values())), reverse=True)
-    group_value_dict =  {group: value for group, value in zip(unique_groups, np.arange(len(unique_groups)))}
-
-    groupvalues = [group_value_dict[group_dict[sample]] for sample in samples]
-
-    if len(unique_groups) <= 10:
-        pop_colormap = plt.get_cmap('Set1')
-    else:
-        if len(unique_groups) > 20:
-            print(f'WARNING: {len(unique_groups)} groups detected. Population colormap provides only 20 colors. Some groups will have the same color.')
-        pop_colormap = plt.get_cmap('tab20c')
-
-    pop_heatmap(groupvalues, unique_groups, all_axes[1], cbaxes, pop_colormap)
-
-    all_axes[2].title.set_text(figtitle)
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
-
-
-
-def plot_df_alt_alt(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle, population_df):
+def plot_df(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle, population_df):
     assert len(grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
 
     sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
@@ -1104,18 +945,18 @@ def plot_df_alt_alt(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance
         colors = np.random.rand(g, 3)
         # Create a colormap from the random colors
         cmap = matplotlib.colors.ListedColormap(colors)
-        heatmap_new(seq_order_list, grouped_motif_seq, all_seq_dict, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[2], cbar_ax=cbar_ax)
+        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[2], cbar_ax = cbar_ax)
 
     else:
         cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
         cmap2.set_over('none')
         #scale colorbar to the range of the dimension reduction
-        heatmap_new(seq_order_list, grouped_motif_seq, all_seq_dict, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax)
+        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax)
 
     all_axes[2].set(ylabel="")
-    xticks_positions = np.arange(0, max_seq_length, 50)  # Adjust 100 to your desired interval
+    xticks_positions = np.arange(0, max_seq_length+50, 50)
     xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False, rotation=0)
+    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
     all_axes[2].set_xticks(xticks_positions)
     all_axes[2].set_xticklabels(xticks_labels, rotation=90)
     all_axes[2].tick_params(axis ='x', which ='major')
@@ -1143,7 +984,7 @@ def plot_df_alt_alt(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance
     groupvalues = [group_value_dict[seq_dict[sample]] for sample in sequences]
 
     if len(unique_groups) <= 10:
-        pop_colormap = plt.get_cmap('Set1')
+        pop_colormap = plt.get_cmap('tab10')
     else:
         if len(unique_groups) > 20:
             print(f'WARNING: {len(unique_groups)} groups detected. Population colormap provides only 20 colors. Some groups will have the same color.')
@@ -1156,154 +997,57 @@ def plot_df_alt_alt(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance
     plt.savefig(figname, bbox_inches = "tight")
 
 
+def plot_df_reads(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle):
+    assert len(grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
 
-def plot_df(df, dm, all_motif_seq, seq_distance_df, figname, figtitle, population_df):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
-    spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.02)
+    sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
+    max_seq_length = max(sequence_lengths.values())
+    nsamples = len(grouped_motif_seq)
 
-    for col in range(3):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-
-    d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
-    seq_order_list = list(reversed(d["ivl"]))
-
-    df = df.reindex(seq_order_list)
-
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    if args.embed_motif_method == "random":
-        g = len(dm.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        sns.heatmap(df, cmap=cmap, ax=all_axes[2], cbar_ax=cbar_ax, yticklabels=True)
-
-        bounds = list(range(-1, 2*g, 2))
-        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-        cbar_ax.set_yticklabels(list(dm.motif.unique()))
-        
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))}, yticklabels=True)
-        cbar_ax.set_yticklabels(dm.motif.tolist())
-
-    print('next')
-    all_axes[2].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False, rotation=0)
-    all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels, rotation=90)
-    all_axes[2].tick_params(axis ='x', which ='major')
-    #cbar_ax.set_yticklabels(dm.motif.tolist())
-    
-    row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
-
-    rectangles = []
-    for m in all_motif_seq:
-        row_index = row_index_map[m[3]]  # Get the row index based on the sequence order list
-        start_col = m[0]  # Starting column index
-        length = len(m[2])  # Length of the motif
-        rectangles.append(Rectangle((start_col, row_index), length, 1, fill=False, edgecolor='black', lw=0.02, clip_on=False))
-
-    p = PatchCollection(rectangles, match_original = True)
-    all_axes[2].add_collection(p)
-    
-    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
-    seq_population = pd.DataFrame({'seq': seq_order_list})
-    seq_population["Sample"] = seq_population.apply(lambda x: x["seq"].split("#")[0], axis = 1)
-        
-    seq_population = seq_population.merge(population_df[["Sample", "Group"]], on = "Sample", how = "left")
-    g = len(seq_population.Group.unique())
-    color = ["skyblue", "silver", "lightgreen", "orange", "violet"]
-    color_df = pd.DataFrame({'Group': list(seq_population.Group.unique()), 'color': color[:g], 'n': list(range(0, 2*g, 2))})
-    seq_population = seq_population.merge(color_df, on = "Group", how = "left")       
-    cmap4 = (matplotlib.colors.ListedColormap(color[:g]))
-    sns.heatmap(seq_population.set_index("seq")[["n"]], ax=all_axes[1], cmap=cmap4, cbar=False, xticklabels = False, yticklabels = False, linewidths=0.1, linecolor='black')
-    all_axes[1].set(ylabel="")
-
-    bounds = list(range(-1, 2*g, 2))
-    norm = matplotlib.colors.BoundaryNorm(bounds, cmap4.N)
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap4, norm=norm), cax=cbaxes, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-    cbaxes.set_yticklabels(list(seq_population.Group.unique()))
-    
-    
-    cb.outline.set_linewidth(0.1)
-    cb.outline.set_edgecolor('black')
-
-    all_axes[2].title.set_text(figtitle)
-    plt.yticks(rotation=0)
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
-
-
-def plot_df_reads(df, dm, all_motif_seq, seq_distance_df, figname, figtitle):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
+    fig = plt.figure(figsize=(min(max(50, 0.015 * max_seq_length), 120), min(120,0.5 * nsamples)), dpi = 300)
     spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(2):
         axs = fig.add_subplot(spec[0, col])
     all_axes = fig.get_axes()    
 
-    #summary = all_seq_motifs.apply(lambda x: x.value_counts(), axis = 0).transpose().reset_index()
-    #summary = summary.set_index("index")
     clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
 
     d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
-    seq_order_list = list(reversed(d["ivl"]))
-
-    df = df.reindex(seq_order_list)
-    #all_seq_motifs = all_seq_motifs.transpose()
-    #all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
-
+    all_axes[0].tick_params(right=False, left = False, top=False, bottom=False, labelright=False, labelleft=False,labeltop=False)
+    
+    seq_order_list = list(d["ivl"])
+    samples = [seq.split("#")[0] for seq in seq_order_list]
+    sequences = [seq.split("#", 2)[0] + "#" + seq.split("#", 2)[1] for seq in seq_order_list]
+    
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
     if args.embed_motif_method == "random":
-        g = len(dm.motif.unique())
+        g = len(dim_reduction.motif.unique())
         colors = np.random.rand(g, 3)
         # Create a colormap from the random colors
         cmap = matplotlib.colors.ListedColormap(colors)
-        sns.heatmap(df, cmap=cmap, ax=all_axes[1], cbar_ax=cbar_ax, yticklabels=True)
+        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[1], cbar_ax=cbar_ax)
 
-        bounds = list(range(-1, 2*g, 2))
-        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-        cbar_ax.set_yticklabels(list(dm.motif.unique()))
-        
     else:
         cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
         cmap2.set_over('none')
-        sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
-        cbar_ax.set_yticklabels(dm.motif.tolist())
+        #scale colorbar to the range of the dimension reduction
+        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax)
 
     all_axes[1].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust to your desired interval
+    xticks_positions = np.arange(0, max_seq_length+50, 50)
     xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
     all_axes[1].set_xticks(xticks_positions)
-    all_axes[1].set_xticklabels(xticks_labels,rotation=90)
+    all_axes[1].set_xticklabels(xticks_labels, rotation=90)
     all_axes[1].tick_params(axis ='x', which ='major')
     
+    all_axes[1].set_yticks(np.arange(nsamples))
+    all_axes[1].set_yticklabels(sequences)
     
-    row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
+    #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
 
-    rectangles = []
-    for m in all_motif_seq:
-        row_index = row_index_map[m[3]]  # Get the row index based on the sequence order list
-        start_col = m[0]  # Starting column index
-        length = len(m[2])  # Length of the motif
-        rectangles.append(Rectangle((start_col, row_index), length, 1, fill=False, edgecolor='black', lw=0.02, clip_on=False))
-
-    p = PatchCollection(rectangles, match_original = True)
-    all_axes[1].add_collection(p)
-    
     all_axes[1].title.set_text(figtitle)
-    plt.yticks(rotation=0)
     print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
@@ -1491,56 +1235,50 @@ def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle
     print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
 
-def plot_df_single_read(df, dm, all_seq_motifs, figname, figtitle):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), 1), dpi = 300)
+
+def plot_df_single_read(grouped_motif_seq, all_seq_dict, dim_reduction, figname, figtitle):
+    sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
+    max_seq_length = max(sequence_lengths.values())
+    nsamples = len(grouped_motif_seq)
+
+    fig = plt.figure(figsize=(min(max(50, 0.015 * max_seq_length), 120), 1), dpi = 300)
     spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[40,5], height_ratios=[1], wspace=0.02)
 
     for col in range(1):
         axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()
+    all_axes = fig.get_axes()    
 
     cbar_ax = fig.add_axes([0.95, .2, .02, .6], title="motif")
     if args.embed_motif_method == "random":
-        g = len(dm.motif.unique())
+        g = len(dim_reduction.motif.unique())
         colors = np.random.rand(g, 3)
         # Create a colormap from the random colors
         cmap = matplotlib.colors.ListedColormap(colors)
-        sns.heatmap(df, cmap=cmap, ax=all_axes[0], cbar_ax=cbar_ax, yticklabels=True)
+        heatmap(list(all_seq_dict.keys()), grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[0], cbar_ax=cbar_ax)
 
-        bounds = list(range(-1, 2*g, 2))
-        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-        cbar_ax.set_yticklabels(list(dm.motif.unique()))
     else:
         cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
         cmap2.set_over('none')
-        sns.heatmap(df, cmap=cmap2, ax=all_axes[0], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
-        cbar_ax.set_yticklabels(dm.motif.tolist()) 
+        #scale colorbar to the range of the dimension reduction
+        heatmap(list(all_seq_dict.keys()), grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[0], cbar_ax = cbar_ax)
+
     all_axes[0].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust to your desired interval
+    xticks_positions = np.arange(0, max_seq_length+50, 50)
     xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[0].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
+    all_axes[0].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
     all_axes[0].set_xticks(xticks_positions)
-    all_axes[0].set_xticklabels(xticks_labels, fontsize = 20,rotation=90)
+    all_axes[0].set_xticklabels(xticks_labels, rotation=90)
     all_axes[0].tick_params(axis ='x', which ='major')
     
-    i = 0
-    j = 0
-    rectangles = []
-    while j < all_seq_motifs.shape[0]:
-        if str(all_seq_motifs.iloc[j, i]) != "nan":
-            rectangles.append(Rectangle((j, i), len(all_seq_motifs.iloc[j, i]), 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
-            j += len(all_seq_motifs.iloc[j, i])
-            
-        else:
-            j += 1
-    p = PatchCollection(rectangles, match_original = True)
-    all_axes[0].add_collection(p)
-
+    all_axes[0].set_yticks(np.arange(nsamples))
+    all_axes[0].set_yticklabels(list(all_seq_dict.keys()))
+    
+    #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
     all_axes[0].title.set_text(figtitle)
-    plt.yticks(rotation=0)
     print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
+
+
 
 
 #######################
@@ -1710,12 +1448,10 @@ if figure == "True":
             print("generating figure")
             plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
         elif run_msa == "False":
-            #df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
             grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
             figfile = output + f".{args.format}"
             print("generating figure")
-            #plot_df(df_to_plot, dimension_reduction_result, all_positions, all_seq_distance_df, figfile, title, population_metadata)
-            plot_df_alt_alt(grouped_positions, all_seq_dict, dimension_reduction_result, all_seq_distance_df, figfile, title, population_metadata)
+            plot_df(grouped_positions, all_seq_dict, dimension_reduction_result, all_seq_distance_df, figfile, title, population_metadata)
 
     elif sequence_type == "reads":
         if run_msa == "True":
@@ -1727,16 +1463,18 @@ if figure == "True":
             print("generating figure")
             plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
         elif run_msa == "False":
-            df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+            grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
             figfile = output + "_reads" + f".{args.format}"
             print("generating figure")
-            plot_df_reads(df_to_plot, dimension_reduction_result, all_positions, all_seq_distance_df, figfile, title)
+            plot_df_reads(grouped_positions, all_seq_dict, dimension_reduction_result, all_seq_distance_df, figfile, title)
+
 
     elif sequence_type == "single":
-        df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+        #df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
+        grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
         figfile = output + "_single_read" + f".{args.format}"
         print("generating figure")
-        plot_df_single_read(df_to_plot, dimension_reduction_result, all_seq_df, figfile, title)
+        plot_df_single_read(grouped_positions, all_seq_dict, dimension_reduction_result, figfile, title)
 
 
 if args.profile:
