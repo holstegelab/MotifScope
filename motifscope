@@ -626,6 +626,27 @@ def write_compressed_seq(seq_chr_dict, motif_dict, output):
             compressed_fasta_file.write(">" + seq + "\n")
             compressed_fasta_file.write(compress_string(seq_chr_dict[seq], motif_dict_r) + "\n")
 
+def write_summary(all_motif_seq, output):
+    motif_counts = defaultdict(lambda: defaultdict(int))
+
+    # Iterate through the original list
+    for start, end, motif, seq in all_motif_seq:
+        # Update the count of the motif for the given sequence
+        motif_counts[seq][motif] += 1
+
+    summary = []
+    for seq, motifs in motif_counts.items():
+        max_length_motif = max(motifs, key=lambda m: len(m) * motifs[m])
+        max_count_motif = max(motifs, key=motifs.get)
+        summary.append((seq, max_length_motif, max_count_motif))
+
+    motif_summary_file = output + "_motif_summary" + ".txt"
+    # Write to a TSV file
+    with open(motif_summary_file, 'w') as f:
+        for row in summary:
+            f.write('\t'.join(map(str, row)) + '\n')
+
+
 def hex_to_bytes(hex_string):
     return binascii.unhexlify(hex_string)
 
@@ -1471,6 +1492,8 @@ motif_chr_dict = assign_chr_to_motif(unique_motifs_and_sb, printable_asii_list)
 all_positions = get_all_positions(seq_index, masked_postion, all_seq_dict, seq_concat)
 all_seq_chr_dict = write_seq_in_hex_chr(all_positions, motif_chr_dict, output, run_msa)
 write_compressed_seq(all_seq_chr_dict, motif_chr_dict, output)
+write_summary(all_positions, output)
+
 
 print("tandem repeat decomposition DONE")
 
