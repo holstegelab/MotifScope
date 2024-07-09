@@ -797,16 +797,6 @@ def heatmap(seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, cmap,
     for nuc, color in list(convert_color.items()):
         convert_color[nuc.lower()] = color
     
-    single_motifs = set()
-    for seq in seq_order:
-        motifs = grouped_motif_seq[seq]
-        for start, end, motif, count, color_value in motifs:
-            single_motifs.update(motif)
-    
-    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
-    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
-    single_bp = list(singlebase_used.keys())        
-
 
     nmotifs = dim_reduction['motif'].nunique()
     umotifs = dim_reduction['motif'].tolist()
@@ -816,22 +806,15 @@ def heatmap(seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, cmap,
     motif_colors = cmap(np.linspace(0, 1, nmotifs))
     motif_cmap = matplotlib.colors.ListedColormap(motif_colors)
 
-    # Create the combined colormap
-    combined_colors = list(motif_cmap.colors) + list(singlebase_used_cmap.colors)
-    combined_cmap = matplotlib.colors.ListedColormap(combined_colors)
-
     # Normalize for the motif part of the combined colormap
-    norm = matplotlib.colors.BoundaryNorm(np.arange(len(combined_colors) + 1) - 0.5, len(combined_colors))
-
-
+    norm = matplotlib.colors.BoundaryNorm(np.arange(len(umotifs) + 1) - 0.5, len(umotifs))
 
     colorcache = {}
     def cache_color(value):
         if value not in colorcache:
-            colorcache[value] = combined_cmap(norm(value))
+            colorcache[value] = motif_cmap(norm(value))
         return colorcache[value]
-
-        
+ 
     singlebase_rectangles = [] 
     rectangles = []
     motif_sep_lines = []
@@ -880,11 +863,12 @@ def heatmap(seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, cmap,
     p = PatchCollection(rectangles, match_original = True)
     ax.add_collection(p)
 
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=combined_cmap, norm=norm), cax=cbar_ax, ticks=np.arange(len(combined_colors)), spacing='uniform', orientation='vertical')
-    cbar_ax.set_yticklabels(umotifs + single_bp)
+    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=motif_cmap, norm=norm), cax=cbar_ax, ticks=np.arange(len(umotifs)), spacing='uniform', orientation='vertical')
+    cbar_ax.set_yticklabels(umotifs)
     cb.outline.set_linewidth(0.1)
     cb.outline.set_edgecolor('black')
     return cb
+
 
 
 def pop_heatmap(data, poplabels, ax, cbar, cmap):
@@ -914,6 +898,18 @@ def pop_heatmap(data, poplabels, ax, cbar, cmap):
     cb.outline.set_linewidth(0.1)
     cb.outline.set_edgecolor('black')
 
+def single_bp_color(data, sblabels, cbar, cmap):
+    data = np.array(data)
+    
+    bounds = np.arange(0, len(sblabels) + 1) - 0.5
+    norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
+
+    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar, ticks=np.arange(len(sblabels)), spacing='uniform', orientation='vertical')
+    cbar.set_yticklabels(sblabels)
+    cb.outline.set_linewidth(0.1)
+    cb.outline.set_edgecolor('black')
+
+
 
 def plot_df(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle, population_df):
     assert len(grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
@@ -940,6 +936,7 @@ def plot_df(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, fig
     sequences = [seq.split("#", 2)[0] + "#" + seq.split("#", 2)[1] for seq in seq_order_list]
     
     cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
+    
     if args.embed_motif_method == "random":
         g = len(dim_reduction.motif.unique())
         colors = np.random.rand(g, 3)
@@ -991,6 +988,26 @@ def plot_df(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, fig
         pop_colormap = plt.get_cmap('tab20c')
 
     pop_heatmap(groupvalues, unique_groups, all_axes[1], cbaxes, pop_colormap)
+
+    ####single bp motifs
+    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
+    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
+    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
+    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
+    for nuc, color in list(convert_color.items()):
+        convert_color[nuc.lower()] = color
+    
+    single_motifs = set()
+    for seq in seq_order_list:
+        motifs = grouped_motif_seq[seq]
+        for start, end, motif, count, color_value in motifs:
+            single_motifs.update(motif)
+    
+    cbaxes_single_bp = fig.add_axes([0.925, 0.4, .02, 0.1], title="single bp\nmotifs")
+    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
+    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
+    single_bp = list(singlebase_used.keys())        
+    single_bp_color(single_bp, single_bp, cbaxes_single_bp, singlebase_used_cmap)
 
     all_axes[2].title.set_text(figtitle)
     print("saving figure")
@@ -1047,11 +1064,29 @@ def plot_df_reads(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_d
     
     #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
 
+    ####single bp motifs
+    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
+    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
+    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
+    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
+    for nuc, color in list(convert_color.items()):
+        convert_color[nuc.lower()] = color
+    
+    single_motifs = set()
+    for seq in seq_order_list:
+        motifs = grouped_motif_seq[seq]
+        for start, end, motif, count, color_value in motifs:
+            single_motifs.update(motif)
+    
+    cbaxes_single_bp = fig.add_axes([0.925, 0.7, .02, 0.1], title="single bp\nmotifs")
+    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
+    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
+    single_bp = list(singlebase_used.keys())        
+    single_bp_color(single_bp, single_bp, cbaxes_single_bp, singlebase_used_cmap)
+
     all_axes[1].title.set_text(figtitle)
     print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
-
-
 
 def msa_with_characters(output):
     chr_fasta_file = output + "_motif_in_hex" + ".hex"
@@ -1275,11 +1310,30 @@ def plot_df_single_read(grouped_motif_seq, all_seq_dict, dim_reduction, figname,
     
     #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
     all_axes[0].title.set_text(figtitle)
+
+    ####single bp motifs
+    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
+    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
+    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
+    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
+    for nuc, color in list(convert_color.items()):
+        convert_color[nuc.lower()] = color
+    
+    single_motifs = set()
+    for seq in grouped_motif_seq.keys():
+        motifs = grouped_motif_seq[seq]
+        for start, end, motif, count, color_value in motifs:
+            single_motifs.update(motif)
+    
+    cbaxes_single_bp = fig.add_axes([0.925, 0.2, .02, 0.6], title="single bp\nmotifs")
+    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
+    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
+    single_bp = list(singlebase_used.keys())        
+    single_bp_color(single_bp, single_bp, cbaxes_single_bp, singlebase_used_cmap)
+
+
     print("saving figure")
     plt.savefig(figname, bbox_inches = "tight")
-
-
-
 
 #######################
 
@@ -1467,7 +1521,6 @@ if figure == "True":
             figfile = output + "_reads" + f".{args.format}"
             print("generating figure")
             plot_df_reads(grouped_positions, all_seq_dict, dimension_reduction_result, all_seq_distance_df, figfile, title)
-
 
     elif sequence_type == "single":
         #df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
