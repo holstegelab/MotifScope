@@ -729,8 +729,13 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
         X_transform_L2 = pd.DataFrame(columns = ["dimension_reduction", "motif"])
         X_transform_L2["motif"] = dm[0].columns
         X_transform_L2["dimension_reduction"] = 0
+    elif dm.shape[0] == 2:
+        X_transform_L2 = pd.DataFrame(columns = ["dimension_reduction", "motif"])
+        X_transform_L2["motif"] = dm[0].columns
+        X_transform_L2["dimension_reduction"] = [0,1]
+
     else:
-        n_neighbors = min(10,max(5,dm.shape[0]/2)) # 10 or half of the number of motifs, whichever is smaller, with a minimum of 5
+        n_neighbors = min(10,max(2,dm.shape[0]/2)) # 10 or half of the number of motifs, whichever is smaller, with a minimum of 5
         n_neighbors = int(min(n_neighbors,dm.shape[0])) # cannot be larger than the number of motifs
 
         data = (-dm).to_numpy(copy=True,dtype=np.float32)
@@ -739,7 +744,8 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
             dnorm = [len(e) for e in dm.index]
             snorm = np.sqrt(dnorm)
             data = data / (snorm[:,np.newaxis] * snorm[np.newaxis,:])
-        
+
+    
         if method == 'UMAP':
             #UMAP has a lot of overhead for small N.
             #This is much faster than builtin method for finding nearest neighbors for small N
