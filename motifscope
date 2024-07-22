@@ -29,6 +29,25 @@ import Levenshtein
 import binascii
 import pylibsais
 
+from mscope.util import MotifPlacement
+from mscope.motif_plot import MotifPlot
+from mscope.multiseq_align import *
+
+
+class Config:
+    def __init__(self):
+        self.edgecolor = 'silver'
+        self.linewidth = 0.25
+        self.singlebase_edges=False
+
+        self.cbar_fontsize = 20
+        self.heatmap_labels_fontsize = 20
+        self.title_fontsize = 30
+
+        self.args = None
+        self.mafft_path = None
+cfg = Config()
+
 
 def parse_fasta(filename):
     """Parse a FASTA file and return a dictionary of sequences"""
@@ -476,7 +495,8 @@ def get_grouped_positions(seq_last_index, seq_name, motif_positions, seq_concat,
             #add end non-motif sequence
             if add_single_base and prev_pos < seq_last_index[cur_sample_pos]:
                 xseq = seq_concat[prev_pos:(seq_last_index[cur_sample_pos] - 1)]
-                current_motifs.append((prev_pos - cur_seq_start, seq_last_index[cur_sample_pos] - cur_seq_start - 1, xseq, 0))
+                current_motifs.append(MotifPlacement(xseq, prev_pos - cur_seq_start, singlebase=True))
+                #current_motifs.append((prev_pos - cur_seq_start, seq_last_index[cur_sample_pos] - cur_seq_start - 1, xseq, 0))
 
             sample_positions[seq_name[cur_sample_pos]] = current_motifs
             prev_pos = cur_seq_start = seq_last_index[cur_sample_pos]
@@ -488,22 +508,19 @@ def get_grouped_positions(seq_last_index, seq_name, motif_positions, seq_concat,
         #add intermediate non-motif sequence
         if add_single_base and prev_pos < pos:
             xseq = seq_concat[prev_pos:pos]
-            current_motifs.append((prev_pos - cur_seq_start, pos - cur_seq_start, xseq, 0))
+            current_motifs.append(MotifPlacement(xseq, prev_pos - cur_seq_start, singlebase=True))
         
         assert pos - cur_seq_start >= 0, f"Position {pos} not found in {seq_name[cur_sample_pos]}"
-        if current_motifs and current_motifs[-1][2] == motif:
-            current_motifs[-1] = (current_motifs[-1][0], end_pos - cur_seq_start, motif, current_motifs[-1][3] + 1)
-        else:
-            current_motifs.append((pos - cur_seq_start, end_pos - cur_seq_start, motif, 1))
+        if not (current_motifs and  current_motifs[-1].attempt_add(motif)):
+            current_motifs.append(MotifPlacement(motif, pos - cur_seq_start))
             unique_motifs.add(motif)
-        assert current_motifs[-1][1] - current_motifs[-1][0] >= len(motif), f"Length of motif {motif} does not match the positions"
 
         prev_pos = end_pos
 
     #add end non-motif sequence
     if add_single_base and prev_pos < seq_last_index[cur_sample_pos]:
         xseq = seq_concat[prev_pos:(seq_last_index[cur_sample_pos] - 1)]
-        current_motifs.append((prev_pos - cur_seq_start, seq_last_index[cur_sample_pos] - cur_seq_start - 1, xseq, 0))
+        current_motifs.append(MotifPlacement(xseq, prev_pos - cur_seq_start, singlebase=True))
 
     sample_positions[seq_name[cur_sample_pos]] = current_motifs
     cur_sample_pos += 1
@@ -512,7 +529,7 @@ def get_grouped_positions(seq_last_index, seq_name, motif_positions, seq_concat,
     while cur_sample_pos < len(seq_last_index):
         if add_single_base:
             xseq = seq_concat[seq_last_index[cur_sample_pos - 1]:(seq_last_index[cur_sample_pos] - 1)]
-            sample_positions[seq_name[cur_sample_pos]] = [(0, len(xseq), xseq, 0)]
+            sample_positions[seq_name[cur_sample_pos]] = [MotifPlacement(xseq, 0, singlebase=True)]
         cur_sample_pos += 1
     return sample_positions, list(unique_motifs)
 
@@ -555,76 +572,12 @@ def get_all_positions(index, marked_positions, seq_dict, seq_concat):
 
     return all_motif_seq
 
-def transform_to_df(all_motif_seq):
-    max_row_index = max(end_row for _, end_row, _, _ in all_motif_seq)
-    columns = list(set(column for _, _, _, column in all_motif_seq))
-
-    values_array = np.full((max_row_index, len(columns)), np.nan, dtype=object)
-    col_index_map = {col: idx for idx, col in enumerate(columns)}
-
-    for start_row, end_row, value, column_name in all_motif_seq:
-        col_idx = col_index_map[column_name]
-        values_array[start_row:end_row, col_idx] = value
-
-    df = pd.DataFrame(values_array, index=range(max_row_index), columns=columns)
-    return df
-
-
-def generate_hex_chr_list():
-    usable_hex = list(range(1,256))
-    usable_hex.remove(60)
-    usable_hex.remove(61)
-    usable_hex.remove(62)
-    usable_hex.remove(45)
-    usable_hex.remove(32)
-    usable_hex.remove(10)
-    usable_hex.remove(13)
-    usable_hex = ['{:02x}'.format(x) for x in usable_hex]
-    return usable_hex
-
-def assign_chr_to_motif(all_unique_motif, printable_asii):
-    if len(all_unique_motif) > len(printable_asii):
-        return None, "too many motifs"        
-    else:
-        printable_asii_to_include = printable_asii[:len(all_unique_motif)]
-        motif_dict = dict(zip(all_unique_motif, printable_asii_to_include))
-        return motif_dict
-
-def write_seq_in_hex_chr(all_motif_seq, motif_dict, output, run_msa):
-    seq_dict = defaultdict(list)
-    for m in all_motif_seq:
-        label = m[3]
-        seq_dict[label].append(motif_dict[m[2]])
-    # Convert lists to strings with space separator
-    for key in seq_dict:
-        seq_dict[key] = " ".join(seq_dict[key])
-        seq_dict = dict(seq_dict)
-    
-    if run_msa == "True":
-        hex_fasta_file = output + "_motif_in_hex" + ".hex"
-        with open (hex_fasta_file, 'w') as hex_fasta:
-            for item in seq_dict:
-                hex_fasta.write(">" + item + "\n")
-                hex_fasta.write(seq_dict[item] + "\n")
-
-    return seq_dict
-
-def compress_string(string, motif_dict):
-    parts = string.split(" ")
-    transformed_string = ""
-    for key, group in groupby(parts):
-        count = len(list(group))
-        transformed_string += f"{motif_dict[key]}{count} "
-    return transformed_string.strip()
-
-
-def write_compressed_seq(seq_chr_dict, motif_dict, output):
+def write_compressed_seq(grouped_positions, output):
     compressed_fasta_file = output + "_compressed_representation" + ".fa"
-    motif_dict_r = {value: key for key, value in motif_dict.items()}
     with open (compressed_fasta_file, 'w') as compressed_fasta_file:
-        for seq in seq_chr_dict:
+        for seq in grouped_positions:
             compressed_fasta_file.write(">" + seq + "\n")
-            compressed_fasta_file.write(compress_string(seq_chr_dict[seq], motif_dict_r) + "\n")
+            compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not ma.singlebase else ma.motif for ma in grouped_positions[seq]]) + "\n")
 
 
 def write_summary(all_motif_seq, output):
@@ -660,41 +613,6 @@ def write_summary(all_motif_seq, output):
         f.write(f"all\t{global_max_length_motif}\t{global_max_count_motif}\n")
 
 
-
-def hex_to_bytes(hex_string):
-    return binascii.unhexlify(hex_string)
-
-
-def normalize_edit_distance(distance, seq_1_length, seq_2_length):
-    if max(seq_1_length, seq_2_length) != 0:
-        return distance / max(seq_1_length, seq_2_length)
-    else:
-        return 0
-
-def edit_distance_between_seq_byte(input_seq_chr_dict):
-    seq_chr_dict = {}
-    for seq, chr_str in input_seq_chr_dict.items():
-        if chr_str == "":
-            seq_chr_dict[seq] = b" "  # Convert space to byte representation
-        else:
-            seq_chr_dict[seq] = hex_to_bytes(chr_str.replace(" ", ""))  # Assuming hex_to_bytes is defined elsewhere
-    
-    seq_keys = list(input_seq_chr_dict.keys())
-    seq_values = list(seq_chr_dict.values())
-    n = len(seq_keys)
-    
-    distance_matrix = np.zeros((n, n))
-    
-    for i in range(n):
-        for j in range(i, n):
-            dist = Levenshtein.distance(seq_chr_dict[seq_keys[i]], seq_chr_dict[seq_keys[j]])
-            distance_matrix[i, j] = normalize_edit_distance(dist, len(seq_values[i]), len(seq_values[j]))
-            if i != j:
-                distance_matrix[j, i] = distance_matrix[i, j]
-    
-    seq_distance_df = pd.DataFrame(distance_matrix, index=seq_keys, columns=seq_keys)
-    
-    return seq_distance_df
 
 def get_motif_pairwise_distance(motif_list):
     score_dict = {}
@@ -805,12 +723,6 @@ def run_umap(dm, method='UMAP', rank=0.5, norm=True):
     
     return X_transform_L2
 
-def map_score_to_alignment(all_seq_motifs, X_transform_L2):
-    motif_dict = {str(motif): float(reduction) for motif, reduction in zip(X_transform_L2['motif'], X_transform_L2['dimension_reduction'])}
-    motif_dict['nan'] = np.nan
-    df = all_seq_motifs.map(motif_dict.get)
-    return df.transpose()
-
 def map_grouped_score_to_alignment(grouped_motif_seq, X_transform_L2):
     #sort by dimension reduction
     X_transform_L2 = X_transform_L2.sort_values(by='dimension_reduction', ascending=True).reset_index(drop=True)
@@ -818,563 +730,12 @@ def map_grouped_score_to_alignment(grouped_motif_seq, X_transform_L2):
 
     motif_dict = {str(motif): float(pos) for pos, motif in enumerate(X_transform_L2['motif'])}
     motif_dict['nan'] = np.nan
-    ngrouped_motif_seq = {}
+
+
     for seq, motifs in grouped_motif_seq.items():
-        nmotifs = [(start, end, motif, count, motif_dict.get(str(motif), np.nan)) for start, end, motif, count in motifs]
-        ngrouped_motif_seq[seq] = nmotifs
+        for motif in motifs:
+            motif.set_score(motif_dict)
 
-    return ngrouped_motif_seq
-
-
-def heatmap(seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, cmap, ax, cbar_ax, linewidth=0.25, cbar_kws = None, edgecolor='black'):
-    assert len(seq_order) == len(grouped_motif_seq), "Number of sequences in seq_order and grouped_motif_seq should be the same"
-    assert len(seq_order) == len(sequence_lengths), "Number of sequences in seq_order and sequence_lengths should be the same"
-    
-
-    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
-    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
-    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
-    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
-    for nuc, color in list(convert_color.items()):
-        convert_color[nuc.lower()] = color
-    
-
-    nmotifs = dim_reduction['motif'].nunique()
-    umotifs = dim_reduction['motif'].tolist()
-
-    # Create the motif colormap
-    cmap1 = plt.get_cmap('YlGnBu_r')
-    motif_colors = cmap(np.linspace(0, 1, nmotifs))
-    motif_cmap = matplotlib.colors.ListedColormap(motif_colors)
-
-    # Normalize for the motif part of the combined colormap
-    norm = matplotlib.colors.BoundaryNorm(np.arange(len(umotifs) + 1) - 0.5, len(umotifs))
-
-    colorcache = {}
-    def cache_color(value):
-        if value not in colorcache:
-            colorcache[value] = motif_cmap(norm(value))
-        return colorcache[value]
- 
-    singlebase_rectangles = [] 
-    rectangles = []
-    motif_sep_lines = []
-    for seq in seq_order:
-        motifs = grouped_motif_seq[seq]
-        slength = sequence_lengths[seq]
-        ypos = seq_order.index(seq)
-        for start, end, motif, count, color_value in motifs:
-            if count == 0: #single bases
-                s = len(motif)
-                if s == 1: #fast path
-                    color = convert_color[motif]
-                    singlebase_rectangles.append(Rectangle((start, ypos), 1, 1, fill=True, lw = linewidth, facecolor=color, edgecolor=edgecolor, clip_on=False))
-                else: #use quadmesh for faster rendering
-                    xcolors = [convert_color[b] for b in motif]
-                    xpos = np.linspace(start, end, len(motif) + 1)
-                    coords = np.zeros((2, len(xpos), 2))
-                    coords[0,:,0] = xpos
-                    coords[1,:,0] = xpos
-                    coords[0,:,1] = ypos
-                    coords[1,:,1] = ypos + 1
-
-                    #quadmesh_coords = np.array([[[x, ypos], [x, ypos + 1], [x + 1, ypos + 1], [x + 1, ypos]] for x in xpos])
-
-                    q = QuadMesh(coords, facecolors=xcolors, rasterized=False, lw=linewidth, edgecolor=edgecolor)
-                    ax.add_collection(q)
-            else: 
-                assert end <= slength, f"End position {end} of motif {motif} is larger than the sequence length {slength}"
-                color = cache_color(color_value)
-                rectangles.append(Rectangle((start, ypos), end - start, 1, fill=True, edgecolor=edgecolor, lw=linewidth, facecolor=color, clip_on=False))
-                if count > 1:
-                    sep_xpos = np.linspace(start, end, count + 1)[1:-1]
-                    motif_sep_lines.extend([((x, ypos), (x, ypos + 1)) for x in sep_xpos])
-
-    p = PatchCollection(singlebase_rectangles, match_original = True)
-    ax.add_collection(p)
-
-    p = PatchCollection(rectangles, match_original = True)            
-    ax.add_collection(p)
-    l = LineCollection(motif_sep_lines, color=edgecolor, lw=linewidth)
-    ax.add_collection(l)
-    ax.set_ylim(0, len(grouped_motif_seq))
-    
-    ypos = np.arange(len(seq_order))
-    rectangles = [Rectangle((0, y), sequence_lengths[seq], 1, fill=False, edgecolor=edgecolor, lw=linewidth, facecolor=edgecolor, clip_on=False) for seq,y in zip(seq_order,ypos)]
-    p = PatchCollection(rectangles, match_original = True)
-    ax.add_collection(p)
-
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=motif_cmap, norm=norm), cax=cbar_ax, ticks=np.arange(len(umotifs)), spacing='uniform', orientation='vertical')
-    cbar_ax.set_yticklabels(umotifs)
-    cb.outline.set_linewidth(0.1)
-    cb.outline.set_edgecolor('black')
-    return cb
-
-
-
-def pop_heatmap(data, poplabels, ax, cbar, cmap):
-    data = np.array(data)
-    
-    bounds = np.arange(0, len(poplabels) + 1) - 0.5
-    norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-
-    ypos = np.arange(data.shape[0] + 1)
-    coords = np.zeros((len(data) + 1, 2, 2))
-    coords[:,0,1] = ypos
-    coords[:,1,1] = ypos
-    coords[:,0,0] = 0
-    coords[:,1,0] = 1
-    #q = QuadMesh(coords, facecolors=cmap(norm(data)), rasterized=False, edgecolor='silver', lw=0.1)
-    q = QuadMesh(coords, facecolors=cmap(norm(data)), rasterized=False, edgecolor='black', lw=0.1)
-    ax.add_collection(q)
-    ax.set_xlim(0, 1)
-    ax.set_ylim(0, len(data))
-    ax.set_ylabel("")
-    ax.set_xticks([])
-    ax.set_yticks([])
-
-
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar, ticks=np.arange(len(poplabels)), spacing='uniform', orientation='vertical')
-    cbar.set_yticklabels(poplabels)
-    cb.outline.set_linewidth(0.1)
-    cb.outline.set_edgecolor('black')
-
-def single_bp_color(data, sblabels, cbar, cmap):
-    data = np.array(data)
-    
-    bounds = np.arange(0, len(sblabels) + 1) - 0.5
-    norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar, ticks=np.arange(len(sblabels)), spacing='uniform', orientation='vertical')
-    cbar.set_yticklabels(sblabels)
-    cb.outline.set_linewidth(0.1)
-    cb.outline.set_edgecolor('black')
-
-
-
-def plot_df(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle, population_df):
-    assert len(grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
-
-    sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
-    max_seq_length = max(sequence_lengths.values())
-    nsamples = len(grouped_motif_seq)
-
-    fig = plt.figure(figsize=(min(max(50, 0.015 * max_seq_length), 120), min(120,0.5 * nsamples)), dpi = 300)
-    spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,0.35,40,10], height_ratios=[1], wspace=0.02)
-
-    for col in range(3):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-
-    d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, bottom=False, labelright=False, labelleft=False,labeltop=False)
-    
-
-    seq_order_list = list(d["ivl"])
-    samples = [seq.split("#")[0] for seq in seq_order_list]
-    sequences = [seq.split("#", 2)[0] + "#" + seq.split("#", 2)[1] for seq in seq_order_list]
-    
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    
-    if args.embed_motif_method == "random":
-        g = len(dim_reduction.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[2], cbar_ax = cbar_ax)
-
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        #scale colorbar to the range of the dimension reduction
-        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax)
-
-    all_axes[2].set(ylabel="")
-    xticks_positions = np.arange(0, max_seq_length+50, 50)
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
-    all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels, rotation=90)
-    all_axes[2].tick_params(axis ='x', which ='major')
-    
-    all_axes[2].set_yticks(np.arange(nsamples))
-    all_axes[2].set_yticklabels(sequences)
-    
-    #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
-
-    
-    #Provide population information
-    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
-    
-    group_dict = {sample: group for sample, group in zip(population_df['Sample'], population_df['Group']) if sample in samples}
-    seq_dict = {}
-    for i, (key, value) in enumerate(group_dict.items(), 1):
-        new_key1 = f"{key}#1"
-        new_key2 = f"{key}#2"
-        seq_dict[new_key1] = value
-        seq_dict[new_key2] = value
-
-    unique_groups = sorted(list(set(seq_dict.values())), reverse=True)
-    group_value_dict =  {group: value for group, value in zip(unique_groups, np.arange(len(unique_groups)))}
-
-    groupvalues = [group_value_dict[seq_dict[sample]] for sample in sequences]
-
-    if len(unique_groups) <= 10:
-        pop_colormap = plt.get_cmap('tab10')
-    else:
-        if len(unique_groups) > 20:
-            print(f'WARNING: {len(unique_groups)} groups detected. Population colormap provides only 20 colors. Some groups will have the same color.')
-        pop_colormap = plt.get_cmap('tab20c')
-
-    pop_heatmap(groupvalues, unique_groups, all_axes[1], cbaxes, pop_colormap)
-
-    ####single bp motifs
-    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
-    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
-    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
-    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
-    for nuc, color in list(convert_color.items()):
-        convert_color[nuc.lower()] = color
-    
-    single_motifs = set()
-    for seq in seq_order_list:
-        motifs = grouped_motif_seq[seq]
-        for start, end, motif, count, color_value in motifs:
-            single_motifs.update(motif)
-    
-    cbaxes_single_bp = fig.add_axes([0.925, 0.4, .02, 0.1], title="single bp\nmotifs")
-    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
-    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
-    single_bp = list(singlebase_used.keys())        
-    single_bp_color(single_bp, single_bp, cbaxes_single_bp, singlebase_used_cmap)
-
-    all_axes[2].title.set_text(figtitle)
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
-
-
-def plot_df_reads(grouped_motif_seq, all_seq_dict, dim_reduction, seq_distance_df, figname, figtitle):
-    assert len(grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
-
-    sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
-    max_seq_length = max(sequence_lengths.values())
-    nsamples = len(grouped_motif_seq)
-
-    fig = plt.figure(figsize=(min(max(50, 0.015 * max_seq_length), 120), min(120,0.5 * nsamples)), dpi = 300)
-    spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.02)
-
-    for col in range(2):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-
-    d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, bottom=False, labelright=False, labelleft=False,labeltop=False)
-    
-    seq_order_list = list(d["ivl"])
-    samples = [seq.split("#")[0] for seq in seq_order_list]
-    sequences = [seq.split("#", 2)[0] + "#" + seq.split("#", 2)[1] for seq in seq_order_list]
-    
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    if args.embed_motif_method == "random":
-        g = len(dim_reduction.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[1], cbar_ax=cbar_ax)
-
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        #scale colorbar to the range of the dimension reduction
-        heatmap(seq_order_list, grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax)
-
-    all_axes[1].set(ylabel="")
-    xticks_positions = np.arange(0, max_seq_length+50, 50)
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
-    all_axes[1].set_xticks(xticks_positions)
-    all_axes[1].set_xticklabels(xticks_labels, rotation=90)
-    all_axes[1].tick_params(axis ='x', which ='major')
-    
-    all_axes[1].set_yticks(np.arange(nsamples))
-    all_axes[1].set_yticklabels(sequences)
-    
-    #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
-
-    ####single bp motifs
-    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
-    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
-    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
-    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
-    for nuc, color in list(convert_color.items()):
-        convert_color[nuc.lower()] = color
-    
-    single_motifs = set()
-    for seq in seq_order_list:
-        motifs = grouped_motif_seq[seq]
-        for start, end, motif, count, color_value in motifs:
-            single_motifs.update(motif)
-    
-    cbaxes_single_bp = fig.add_axes([0.925, 0.7, .02, 0.1], title="single bp\nmotifs")
-    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
-    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
-    single_bp = list(singlebase_used.keys())        
-    single_bp_color(single_bp, single_bp, cbaxes_single_bp, singlebase_used_cmap)
-
-    all_axes[1].title.set_text(figtitle)
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
-
-def msa_with_characters(output):
-    chr_fasta_file = output + "_motif_in_hex" + ".hex"
-    os.system(f"{mafft_path}/hex2maffttext %s > %s" %(chr_fasta_file, chr_fasta_file.replace(".hex", ".ASCII")))
-    os.system(f"mafft --text --op 2.0 --ep 0.1 %s > %s" %(chr_fasta_file.replace(".hex", ".ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
-    os.system(f"{mafft_path}/maffttext2hex %s > %s" % (chr_fasta_file.replace(".hex", "_mafft_output.ASCII"), chr_fasta_file.replace(".hex", "_mafft_output.hex")))
-    msa_result = list(SeqIO.parse(chr_fasta_file.replace(".hex", "_mafft_output.hex"), "fasta"))
-    os.system("rm %s" %(chr_fasta_file))
-    os.system("rm %s" %(chr_fasta_file.replace(".hex", ".ASCII")))
-    os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.ASCII")))
-    os.system("rm %s" %(chr_fasta_file.replace(".hex", "_mafft_output.hex")))
-    return msa_result
-
-def prepare_for_plotting(msa_result, motif_dict, dm):
-    motif_dict_r = {y: x for x, y in motif_dict.items()}
-    motif_dict_r["--"] = ''
-    
-    msa_df = pd.DataFrame()
-    for i in range(len(msa_result)):
-        single_seq = str(msa_result[i].seq)
-        msa_df = pd.concat([msa_df, pd.DataFrame([single_seq[i:i+2] for i in range(0, len(single_seq), 2)], columns = [msa_result[i].description])], axis = 1)
-    
-    msa_df["motifs"] = msa_df.apply(lambda x: x.unique().tolist(), axis = 1)
-    msa_df["max_length"] = msa_df.apply(lambda x: max(len(motif_dict_r[i]) for i in x["motifs"]), axis = 1)
-    msa_df = msa_df.drop(columns = ["motifs"])
-    max_motif_length = msa_df["max_length"].tolist()
-    msa_adjusted_df = msa_df.loc[msa_df.index.repeat(msa_df.max_length)]
-    msa_adjusted_df = msa_adjusted_df.drop(columns = ["max_length"])
-    msa_adjusted_df = msa_adjusted_df.transpose()
-    msa_adjusted_df = msa_adjusted_df.map(lambda x: motif_dict_r[x])
-    msa_adjusted_df.columns = range(msa_adjusted_df.columns.size)
-
-    score_dict = dict(zip(dm.motif, dm.dimension_reduction))
-    score_dict[''] = np.nan
-    df = msa_adjusted_df.map(lambda x: score_dict[x])
-    
-    return df, max_motif_length
-    
-
-def plot_msa_df(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, population_df, max_motif_length):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
-    spec = fig.add_gridspec(ncols=4, nrows=1, width_ratios=[4,1,40,10], height_ratios=[1], wspace=0.01)
-
-    for col in range(3):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-
-    d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
-    seq_order_list = list(reversed(d["ivl"]))
-
-
-    df = df.reindex(seq_order_list)
-    all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
-    
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    if args.embed_motif_method == "random":
-        g = len(dm.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        sns.heatmap(df, cmap=cmap, ax=all_axes[2], cbar_ax=cbar_ax, yticklabels=True)
-
-        bounds = list(range(-1, 2*g, 2))
-        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-        cbar_ax.set_yticklabels(list(dm.motif.unique()))
-        
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        sns.heatmap(df, cmap=cmap2, ax=all_axes[2], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
-        cbar_ax.set_yticklabels(dm.motif.tolist())
-    all_axes[2].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 50)  # Adjust 100 to your desired interval
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[2].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
-    all_axes[2].set_xticks(xticks_positions)
-    all_axes[2].set_xticklabels(xticks_labels,rotation=90)
-    all_axes[2].tick_params(axis ='x', which ='major', rotation=90)
-    
-    
-    rectangles = []
-    for i in range(df.shape[0]):
-        j = 0
-        m = 0
-        while j < df.shape[1]:
-            if str(df.iloc[i, j]) != "nan":
-                rectangles.append(Rectangle((j, i), max_motif_length[m], 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
-            j += max_motif_length[m]
-            m += 1
-    p = PatchCollection(rectangles, match_original = True)
-    all_axes[2].add_collection(p)
-
-    cbaxes = fig.add_axes([0.925, 0.7, .02, 0.1], title="population")
-    seq_population = pd.DataFrame({'seq': seq_order_list})
-    seq_population["Sample"] = seq_population.apply(lambda x: x["seq"].split("#")[0], axis = 1)
-    
-    seq_population = seq_population.merge(population_df[["Sample", "Group"]], on = "Sample", how = "left")
-    g = len(seq_population.Group.unique())
-    color = ["skyblue", "silver", "lightgreen", "orange", "violet"]
-    color_df = pd.DataFrame({'Group': list(seq_population.Group.unique()), 'color': color[:g], 'n': list(range(0, 2*g, 2))})
-    seq_population = seq_population.merge(color_df, on = "Group", how = "left")       
-    cmap4 = (matplotlib.colors.ListedColormap(color[:g]))
-    sns.heatmap(seq_population.set_index("seq")[["n"]], ax=all_axes[1], cmap=cmap4, cbar=False, xticklabels = False, yticklabels = False, linewidths=0.1, linecolor='black')
-    all_axes[1].set(ylabel="")
-
-    bounds = list(range(-1, 2*g, 2))
-    norm = matplotlib.colors.BoundaryNorm(bounds, cmap4.N)
-    cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap4, norm=norm), cax=cbaxes, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-    cbaxes.set_yticklabels(list(seq_population.Group.unique()))
-    
-    cb.outline.set_linewidth(0.1)
-    cb.outline.set_edgecolor('black')
-
-    all_axes[2].title.set_text(figtitle)
-    plt.yticks(rotation=0)
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
-
-
-def plot_msa_df_reads(df, dm, all_seq_motifs, seq_distance_df, figname, figtitle, max_motif_length):
-    fig = plt.figure(figsize=(min(max(50, 0.015 * df.shape[1]), 120), min(120,0.5 * df.shape[0])), dpi = 300)
-    spec = fig.add_gridspec(ncols=3, nrows=1, width_ratios=[4,40,5], height_ratios=[1], wspace=0.01)
-
-    for col in range(2):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    clusters = shc.linkage(squareform(seq_distance_df), method='average', metric="euclidean")
-
-    d = shc.dendrogram(Z = clusters, ax = all_axes[0], labels = seq_distance_df.index, orientation = "left")
-    all_axes[0].tick_params(right=False, left = False, top=False, labelright=False, labelleft=False,labeltop=False)
-    seq_order_list = list(reversed(d["ivl"]))
-
-    df = df.reindex(seq_order_list)
-    all_seq_motifs = all_seq_motifs.reindex(seq_order_list)
-
-    cbar_ax = fig.add_axes([0.975, .2, .02, .6], title="motif")
-    if args.embed_motif_method == "random":
-        g = len(dm.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        sns.heatmap(df, cmap=cmap, ax=all_axes[1], cbar_ax=cbar_ax, yticklabels=True)
-
-        bounds = list(range(-1, 2*g, 2))
-        norm = matplotlib.colors.BoundaryNorm(bounds, cmap.N)
-        cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar_ax, ticks=list(range(0, 2*g, 2)), spacing='uniform', orientation='vertical')
-        cbar_ax.set_yticklabels(list(dm.motif.unique()))
-
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        sns.heatmap(df, cmap=cmap2, ax=all_axes[1], cbar_ax = cbar_ax, cbar_kws={"ticks": list(map(float, dm.dimension_reduction))})
-        cbar_ax.set_yticklabels(dm.motif.tolist()) 
-    all_axes[1].set(ylabel="")
-    xticks_positions = np.arange(0, df.shape[1], 10) 
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[1].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False,labeltop=False,rotation=0)
-    all_axes[1].set_xticks(xticks_positions)
-    all_axes[1].set_xticklabels(xticks_labels,rotation=90)
-    all_axes[1].tick_params(axis ='x', which ='major', rotation=90)
-
-    rectangles = []
-    for i in range(df.shape[0]):
-        j = 0
-        m = 0
-        while j < df.shape[1]:
-            if str(df.iloc[i, j]) != "nan":
-                rectangles.append(Rectangle((j, i), max_motif_length[m], 1, fill=False, edgecolor='black', lw=0.05, clip_on=False))
-            j += max_motif_length[m]
-            m += 1
-    p = PatchCollection(rectangles, match_original = True)
-    all_axes[1].add_collection(p)
-
-    all_axes[1].title.set_text(figtitle)
-    plt.yticks(rotation=0)
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
-
-
-def plot_df_single_read(grouped_motif_seq, all_seq_dict, dim_reduction, figname, figtitle):
-    sequence_lengths = {seq: len(all_seq_dict[seq]) for seq in grouped_motif_seq.keys()}
-    max_seq_length = max(sequence_lengths.values())
-    nsamples = len(grouped_motif_seq)
-
-    fig = plt.figure(figsize=(min(max(50, 0.015 * max_seq_length), 120), 1), dpi = 300)
-    spec = fig.add_gridspec(ncols=2, nrows=1, width_ratios=[40,5], height_ratios=[1], wspace=0.02)
-
-    for col in range(1):
-        axs = fig.add_subplot(spec[0, col])
-    all_axes = fig.get_axes()    
-
-    cbar_ax = fig.add_axes([0.95, .2, .02, .6], title="motif")
-    if args.embed_motif_method == "random":
-        g = len(dim_reduction.motif.unique())
-        colors = np.random.rand(g, 3)
-        # Create a colormap from the random colors
-        cmap = matplotlib.colors.ListedColormap(colors)
-        heatmap(list(all_seq_dict.keys()), grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap, ax=all_axes[0], cbar_ax=cbar_ax)
-
-    else:
-        cmap2 = copy.copy(plt.get_cmap('YlGnBu_r'))
-        cmap2.set_over('none')
-        #scale colorbar to the range of the dimension reduction
-        heatmap(list(all_seq_dict.keys()), grouped_motif_seq, sequence_lengths, dim_reduction, cmap=cmap2, ax=all_axes[0], cbar_ax = cbar_ax)
-
-    all_axes[0].set(ylabel="")
-    xticks_positions = np.arange(0, max_seq_length+50, 50)
-    xticks_labels = [str(x) for x in xticks_positions]
-    all_axes[0].tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
-    all_axes[0].set_xticks(xticks_positions)
-    all_axes[0].set_xticklabels(xticks_labels, rotation=90)
-    all_axes[0].tick_params(axis ='x', which ='major')
-    
-    all_axes[0].set_yticks(np.arange(nsamples))
-    all_axes[0].set_yticklabels(list(all_seq_dict.keys()))
-    
-    #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
-    all_axes[0].title.set_text(figtitle)
-
-    ####single bp motifs
-    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
-    #singlebase_cmap = matplotlib.colors.ListedColormap(['mistyrose','beige', 'lavender', 'thistle', 'grey'])
-    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
-    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
-    for nuc, color in list(convert_color.items()):
-        convert_color[nuc.lower()] = color
-    
-    single_motifs = set()
-    for seq in grouped_motif_seq.keys():
-        motifs = grouped_motif_seq[seq]
-        for start, end, motif, count, color_value in motifs:
-            single_motifs.update(motif)
-    
-    cbaxes_single_bp = fig.add_axes([0.925, 0.2, .02, 0.6], title="single bp\nmotifs")
-    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
-    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in singlebase_used])
-    single_bp = list(singlebase_used.keys())        
-    single_bp_color(single_bp, single_bp, cbaxes_single_bp, singlebase_used_cmap)
-
-
-    print("saving figure")
-    plt.savefig(figname, bbox_inches = "tight")
 
 #######################
 
@@ -1400,8 +761,8 @@ parser.add_argument('-t', '--title', default = None, dest='title',
                     metavar = "title", type=str,
                     help ='Title of the plot, default: None')
 
-parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False'], default = "False",
-                    help = 'Run MSA. Boolean (True/False).')
+parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False', 'POAMotif', 'POANucleotide', 'MAFFT', 'Levenshtein'], default = "Levenshtein",
+                    help = 'MSA setting. Either POAMotif, POANucleotide, MAFFT or Levenshtein. For backwars compatibility, True/False can be used, which maps to POANucleotide/Levenshtein. Default: Levenshtein.')
 
 parser.add_argument('-mp', '--mafft_path', default = None, dest = 'mafft_path', required = False, 
                     metavar = "./mafft", type=str,
@@ -1445,16 +806,28 @@ if args.sequence_type == 'assembly' and not args.population:
     parser.error('-p is required when --sequence_type is "assembly"')
 
 
+cfg.args = args
+
 #args = parser.parse_args()
 
 if args.run_msa == "True":
+    args.run_msa = "POANucleotide"
+elif args.run_msa == "False":
+    args.run_msa = "Levenshtein"
+
+if args.run_msa == "MAFFT":
     mafft_path = os.path.join(os.getenv('CONDA_PREFIX'), 'libexec', 'mafft')
     if not os.path.exists(os.path.join(mafft_path, 'hex2maffttext')):
         print(f"Mafft binary hex2maffttext not found within the specified folder '{mafft_path}'. Please provide the correct path to mafft binaries with -mp.")
         sys.exit(1)
 
-if args.mafft_path != None:
-    mafft_path = args.mafft_path
+    if args.mafft_path != None:
+        mafft_path = args.mafft_path
+    
+    cfg.mafft_path = mafft_path
+
+
+
 title = args.title
 sequence_type = args.sequence_type
 input_fasta_to_count = args.input_fasta_to_count
@@ -1485,6 +858,8 @@ if not os.path.exists(prefix_dir):
 output_file = os.path.join(prefix_dir, f"{prefix}_result.txt")
 output = os.path.join(prefix_dir, prefix)
 
+cfg.output = output
+
 all_seq_dict = parse_fasta(input_fasta_to_count)
 seq_concat, seq_index, seq_keys = prepare_suffix_string(all_seq_dict)
 
@@ -1506,21 +881,25 @@ unique_motifs_and_sb = ['A', 'C', 'G', 'T'] + unique_motifs
 #unique_motifs = {m[2] for m in all_positions}
 #unique_motifs = list(unique_motifs)
 
-printable_asii_list = generate_hex_chr_list()
-motif_chr_dict = assign_chr_to_motif(unique_motifs_and_sb, printable_asii_list)
-
 all_positions = get_all_positions(seq_index, masked_postion, all_seq_dict, seq_concat)
-all_seq_chr_dict = write_seq_in_hex_chr(all_positions, motif_chr_dict, output, run_msa)
-write_compressed_seq(all_seq_chr_dict, motif_chr_dict, output)
+write_compressed_seq(grouped_positions, output)
 write_summary(all_positions, output)
 
 
-print("tandem repeat decomposition DONE")
+if run_msa == "POANucleotide":
+    malign = POAAlignerNucleotide(cfg)
+elif run_msa == "POAMotif":
+    malign = POAAlignerMotif(cfg)
+elif run_msa == "MAFFT":
+    malign = MAFFTAligner(cfg)
+else:
+    malign = LevenshteinAligner(cfg, all_seq_dict)
 
+grouped_positions, sequence_lengths, all_seq_distance_df = malign.run(grouped_positions, unique_motifs_and_sb)
+
+print("tandem repeat decomposition DONE")
+print(all_seq_distance_df)
 if figure == "True":
-    all_seq_df = transform_to_df(all_positions)
-    all_seq_distance_df = edit_distance_between_seq_byte(all_seq_chr_dict)
-    #all_seq_chr_dict.clear()
     alignment_score_matrix = get_motif_pairwise_distance(unique_motifs)
 
     if args.embed_motif_method == "random":
@@ -1532,45 +911,41 @@ if figure == "True":
     dimension_reduction_result = dimension_reduction_result.sort_values(by = "dimension_reduction")
         
 
+
     if sequence_type == "assembly":
         population = args.population
         population_metadata = pd.read_csv(population, sep = "\t", header = None)
         population_metadata.columns = ["Sample", "Group"]
-        if run_msa == "True":
-            print("running MSA")
-            msa = msa_with_characters(output)
-            print("MSA DONE")
-            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            figfile = output + "_msa" + f".{args.format}"
-            print("generating figure")
-            plot_msa_df(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, population_metadata, motif_length)
-        elif run_msa == "False":
-            grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
-            figfile = output + f".{args.format}"
-            print("generating figure")
-            plot_df(grouped_positions, all_seq_dict, dimension_reduction_result, all_seq_distance_df, figfile, title, population_metadata)
+        
+
+        map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
+        figfile = output + f".{args.format}"
+        print("generating figure")
+        figure = MotifPlot(cfg, title, figfile)
+        figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
+        figure.enable_dendrogram(all_seq_distance_df)
+        figure.enable_classes(population_metadata)
+        figure.create_figure()
 
     elif sequence_type == "reads":
-        if run_msa == "True":
-            print("running MSA")
-            msa = msa_with_characters(output)
-            print("MSA DONE")
-            msa_df_to_plot, motif_length = prepare_for_plotting(msa, motif_chr_dict, dimension_reduction_result)
-            figfile = output + "_reads_msa" + f".{args.format}"
-            print("generating figure")
-            plot_msa_df_reads(msa_df_to_plot, dimension_reduction_result, all_seq_df, all_seq_distance_df, figfile, title, motif_length)
-        elif run_msa == "False":
-            grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
-            figfile = output + "_reads" + f".{args.format}"
-            print("generating figure")
-            plot_df_reads(grouped_positions, all_seq_dict, dimension_reduction_result, all_seq_distance_df, figfile, title)
+        map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
+        figfile = output + "_reads" + f".{args.format}"
+        print("generating figure")
+        
+        figure = MotifPlot(cfg, title, figfile)
+        figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
+        figure.enable_dendrogram(all_seq_distance_df)
+        figure.create_figure()
+
 
     elif sequence_type == "single":
-        #df_to_plot = map_score_to_alignment(all_seq_df, dimension_reduction_result)
         grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
         figfile = output + "_single_read" + f".{args.format}"
+        
         print("generating figure")
-        plot_df_single_read(grouped_positions, all_seq_dict, dimension_reduction_result, figfile, title)
+        figure = MotifPlot(cfg, title, figfile)
+        figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
+        figure.create_figure()
 
 
 if args.profile:
