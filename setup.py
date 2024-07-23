@@ -1,10 +1,12 @@
 import sys
-from setuptools import setup
+from setuptools import setup, find_packages
+
+packages = find_packages(include=['mscope', 'mscope.*'])
 
 setup(
     name="MotifScope",
     version="0.1.0",
-    packages = find_packages(),
+    packages = packages,
     scripts = ['motifscope'],
     install_requires=['numpy','pandas','matplotlib','biopython', 'multiprocess', 'umap-learn', 'scikit-learn', 'levenshtein', 'pyabpoa'],
     author = "Y.Zhang",
