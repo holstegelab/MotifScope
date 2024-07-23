@@ -17,12 +17,15 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     edgecolor = cfg.edgecolor
     linewidth = cfg.linewidth
 
-    if cfg.singlebase_edges:
+    '''if cfg.singlebase_edges:
         singlebase_linewidth = linewidth
         singlebase_edgecolor = edgecolor
     else:
         singlebase_linewidth = 0
         singlebase_edgecolor = 'face'
+        '''
+    singlebase_linewidth = linewidth
+    singlebase_edgecolor = edgecolor
 
 
     #handling single bp colors
