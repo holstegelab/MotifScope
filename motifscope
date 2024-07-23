@@ -36,7 +36,7 @@ from mscope.multiseq_align import *
 
 class Config:
     def __init__(self):
-        self.edgecolor = 'silver'
+        self.edgecolor = 'black'
         self.linewidth = 0.25
         self.singlebase_edges=False
 
@@ -581,37 +581,47 @@ def write_compressed_seq(grouped_positions, output):
 
 
 def write_summary(all_motif_seq, output):
-
     motif_counts = defaultdict(lambda: defaultdict(int))
     global_length_count = defaultdict(int)
     global_total_count = defaultdict(int)
-
+    seq_order = [] 
+    all_motifs = set()  
 
     for start, end, motif, seq in all_motif_seq:
-
         motif_counts[seq][motif] += 1
-
         global_length_count[motif] += len(motif) * motif_counts[seq][motif]
         global_total_count[motif] += motif_counts[seq][motif]
+        all_motifs.add(motif)
+        if seq not in seq_order:
+            seq_order.append(seq)
 
     summary = []
 
-    for seq, motifs in motif_counts.items():
-        max_length_motif = max(motifs, key=lambda m: len(m) * motifs[m])
-        max_count_motif = max(motifs, key=motifs.get)
-        
-        summary.append((seq, max_length_motif, max_count_motif))
+    for seq in seq_order:
+        motifs = motif_counts[seq]
+        seq_summary = []
+        for motif, count in motifs.items():
+            length = len(motif) * count
+            seq_summary.append((seq, motif, length, count))
 
-    global_max_length_motif = max(global_length_count, key=global_length_count.get)
-    global_max_count_motif = max(global_total_count, key=global_total_count.get)
+        seq_summary.sort(key=lambda x: x[2], reverse=True)
+        summary.extend(seq_summary)
+
+    global_summary = []
+    for motif in all_motifs:
+        total_length = global_length_count[motif]
+        total_count = global_total_count[motif]
+        global_summary.append(('all', motif, total_length, total_count))
+
+    global_summary.sort(key=lambda x: x[2], reverse=True)
 
     motif_summary_file = output + "_motif_summary.txt"
-    
     with open(motif_summary_file, 'w') as f:
-        f.writelines('\t'.join(map(str, row)) + '\n' for row in summary)
-        # Add global summary line
-        f.write(f"all\t{global_max_length_motif}\t{global_max_count_motif}\n")
-
+        #f.write("seq\tmotif\tlength\tcount\n")
+        for row in summary:
+            f.write('\t'.join(map(str, row)) + '\n')
+        for row in global_summary:
+            f.write('\t'.join(map(str, row)) + '\n')
 
 
 def get_motif_pairwise_distance(motif_list):
