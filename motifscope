@@ -589,8 +589,8 @@ def write_summary(all_motif_seq, output):
 
     for start, end, motif, seq in all_motif_seq:
         motif_counts[seq][motif] += 1
-        global_length_count[motif] += len(motif) * motif_counts[seq][motif]
-        global_total_count[motif] += motif_counts[seq][motif]
+        global_length_count[motif] += len(motif)
+        global_total_count[motif] += 1
         all_motifs.add(motif)
         if seq not in seq_order:
             seq_order.append(seq)
