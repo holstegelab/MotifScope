@@ -33,7 +33,8 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     single_motifs = ['A', 'C', 'G', 'T']
     if 'N' in motif_counts:
         single_motifs.append('N')
-   
+    
+    used_single_motifs = [x for x in motif_counts if x in single_motifs]
     singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
     convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
     for nuc, color in list(convert_color.items()):
@@ -43,7 +44,8 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in single_motifs[::-1]])
    
     #show single value after the decimal point
-    sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in single_motifs[::-1]]
+    sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in used_single_motifs[::-1]]
+    #sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in single_motifs[::-1]]
     single_bp_color(cfg, sblabels, cbar_sb_ax, singlebase_used_cmap)
 
 
@@ -260,9 +262,11 @@ class MotifPlot:
         axes['heatmap'] = fig.add_subplot(spec[0, cur_pos])
 
 
-        nmotifs = len(self.motif_counts) - 4 #correct for single base motifs
+        #nmotifs = len(self.motif_counts) - 4 #correct for single base motifs
+        nmotifs = len(self.motif_counts) - len([x for x in self.motif_counts if x in ["A", "T", "C", "G"]])
 
         heatmap_pos = axes['heatmap'].get_position()
+        #print(heatmap_pos)
         
         max_height = (heatmap_pos.y1 - heatmap_pos.y0) * height
         COL1 = heatmap_pos.x1 + 0.07
@@ -274,13 +278,14 @@ class MotifPlot:
         
         #add color bar for motifs
         cbar_height = min(1.0 * nmotifs, max_height)
-
+        #print(cbar_height, height, nmotifs, max_height)
         axes['cbar_heatmap'] = fig.add_axes([COL1, column1_max  - cbar_height / height, 0.02, cbar_height / height], title="motifs")
         column1_max = axes['cbar_heatmap'].get_position().y0 - sep_dist_colorbar_y
 
 
         #add color bar for singe bp. 
-        cbar_sb_height = min(1.0 * 4, max_height)
+        #cbar_sb_height = min(1.0 * 4, max_height)
+        cbar_sb_height = min(len([x for x in self.motif_counts if x in ["A", "T", "C", "G"]]) * 4, max_height)
 
         # see if we can fit the single bp motif colorbar below the motif colorbar
         if (column1_max  - cbar_sb_height / height) >= heatmap_pos.y0:
