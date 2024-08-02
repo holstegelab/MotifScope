@@ -8,6 +8,7 @@ import sys
 
 from Bio import SeqIO
 from Bio import Align
+from Bio.Seq import Seq
 from itertools import groupby
 import bisect
 from collections import defaultdict
@@ -56,6 +57,14 @@ def parse_fasta(filename):
         if record.seq != "":
             sequences[record.description] = str(record.seq)
     return sequences
+
+def get_reverse_complements(sequences):
+    """Return a dictionary of reverse complement sequences"""
+    reverse_complements = {}
+    for description, seq in sequences.items():
+        reverse_seq = Seq(seq).reverse_complement()
+        reverse_complements[description] = str(reverse_seq)
+    return reverse_complements
 
 def prepare_suffix_string(sequence_dict):
     """Prepare a sequence dictionary in format required by pylibsais."""
@@ -759,6 +768,9 @@ parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count'
                     metavar = "input.fa", type = str,
                     help ='Input fasta file to analyze')
 
+parser.add_argument('-reverse', dest='reverse', type = str, choices=['True', 'False'], default = "False",
+                    help ='Use reverse complement of input fasta')
+
 parser.add_argument('-mink', '--min_kmer', default = 2, dest = 'min_kmer_size',
                     type = int, metavar = 2,
                     help ='Minimum length of motif to characterize')
@@ -848,6 +860,7 @@ motif_guided = args.motif_guided
 ref_motifs = args.ref_motifs
 output_prefix = args.output_prefix
 figure = args.figure
+reverse = args.reverse
 
 if args.profile:
     #imports for profiling
@@ -871,6 +884,9 @@ output = os.path.join(prefix_dir, prefix)
 cfg.output = output
 
 all_seq_dict = parse_fasta(input_fasta_to_count)
+if reverse == "True":
+    all_seq_dict = get_reverse_complements(all_seq_dict)
+
 seq_concat, seq_index, seq_keys = prepare_suffix_string(all_seq_dict)
 
 if motif_guided == "False":
