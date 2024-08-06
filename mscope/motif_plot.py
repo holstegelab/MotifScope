@@ -46,7 +46,8 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     #show single value after the decimal point
     sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in used_single_motifs[::-1]]
     #sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in single_motifs[::-1]]
-    single_bp_color(cfg, sblabels, cbar_sb_ax, singlebase_used_cmap)
+    if len(sblabels) > 0:
+        single_bp_color(cfg, sblabels, cbar_sb_ax, singlebase_used_cmap)
 
 
     nmotifs = dim_reduction['motif'].nunique()
@@ -125,7 +126,9 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     ax.add_collection(p)
 
     cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=motif_cmap, norm=norm), cax=cbar_ax, ticks=np.arange(len(umotifs)), spacing='uniform', orientation='vertical')
-    ulabels = [f"{motif} ({motif_counts[motif] / float(len(grouped_motif_seq)):.1f})" for motif in umotifs]
+    #ulabels = [f"{motif} ({motif_counts[motif] / float(len(grouped_motif_seq)):.1f})" for motif in umotifs]
+    ulabels = [f"{motif} ({motif_counts.get(motif, 0) / float(len(grouped_motif_seq)):.1f})" for motif in umotifs]
+
     cbar_ax.set_yticklabels(ulabels)
     cbar_ax.tick_params(labelsize=cfg.cbar_fontsize)
     cbar_ax.title.set_fontsize(cfg.cbar_fontsize)
@@ -240,7 +243,9 @@ class MotifPlot:
 
     def _prepare_fig(self):        
         height = min(120, 0.5 * self.nsamples)
+        #height = 50
         width = min(max(50, 0.015 * self.max_seq_length), 120)
+        #width = min(max(50, 0.015 * self.max_seq_length), 50)
 
         fig = plt.figure(figsize=(width, height), dpi = 300)
         width_ratios = [40,10]
@@ -293,8 +298,8 @@ class MotifPlot:
             column1_max = axes['cbar_single_bp'].get_position().y0 - sep_dist_colorbar_y
         else:
             #put it next to it.
-            axes['cbar_single_bp'] = fig.add_axes([COL2, column2_max - cbar_sb_height/height, 0.02, cbar_sb_height / height], title="single bp\nmotifs")
-            colomn2_max = axes['cbar_single_bp'].get_position().y0 - sep_dist_colorbar_y
+            axes['cbar_single_bp'] = fig.add_axes([COL2, column2_max - cbar_sb_height / height, 0.02, cbar_sb_height / height], title="single bp\nmotifs")
+            column2_max = axes['cbar_single_bp'].get_position().y0 - sep_dist_colorbar_y
         
 
         if self.plot_classes:
@@ -335,6 +340,8 @@ class MotifPlot:
             cmap = matplotlib.colors.ListedColormap(colors)
         else:
             cmap = copy.copy(plt.get_cmap('YlGnBu_r'))
+            #cmap = copy.copy(plt.get_cmap('Spectral'))
+            #cmap = copy.copy(plt.get_cmap('YlGnBu'))
             cmap.set_over('none')
             #scale colorbar to the range of the dimension reduction
 
