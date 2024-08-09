@@ -872,7 +872,6 @@ if not os.path.exists(prefix_dir):
     sys.exit(1)
 output_file = os.path.join(prefix_dir, f"{prefix}_result.txt")
 output = os.path.join(prefix_dir, prefix)
-print("Output files prefix: " + output)
 
 cfg.output = output
 
