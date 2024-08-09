@@ -46,7 +46,7 @@ class Config:
         self.title_fontsize = 30
 
         self.args = None
-        self.mafft_path = None
+
 cfg = Config()
 
 
@@ -592,7 +592,8 @@ def write_compressed_seq(grouped_positions, output):
     with open (compressed_fasta_file, 'w') as compressed_fasta_file:
         for seq in grouped_positions:
             compressed_fasta_file.write(">" + seq + "\n")
-            compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not ma.singlebase else ma.motif for ma in grouped_positions[seq]]) + "\n")
+            #compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not ma.singlebase else ma.motif for ma in grouped_positions[seq]]) + "\n")
+            compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not f"{ma.singlebase}1" else ma.motif for ma in [seq]]) + "\n")
 
 
 def write_summary(all_motif_seq, output):
@@ -789,12 +790,8 @@ parser.add_argument('-t', '--title', default = None, dest='title',
                     metavar = "title", type=str,
                     help ='Title of the plot, default: None')
 
-parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False', 'POAMotif', 'POANucleotide', 'MAFFT', 'Levenshtein'], default = "Levenshtein",
-                    help = 'MSA setting. Either POAMotif, POANucleotide, MAFFT or Levenshtein. For backwars compatibility, True/False can be used, which maps to POANucleotide/Levenshtein. Default: Levenshtein.')
-
-parser.add_argument('-mp', '--mafft_path', default = None, dest = 'mafft_path', required = False, 
-                    metavar = "./mafft", type=str,
-                    help = 'Path to mafft, default: $PREFIX_CONDA/libexec/mafft')
+parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False', 'POAMotif', 'POANucleotide', 'Levenshtein'], default = "Levenshtein",
+                    help = 'MSA setting. Either POAMotif, POANucleotide or Levenshtein. For backwars compatibility, True/False can be used, which maps to POANucleotide/Levenshtein. Default: Levenshtein.')
 
 parser.add_argument('-g', dest = 'motif_guided', type = str, choices=['True', 'False'], default = "False",
                     help = 'Known motif guided motif discovery. Boolean (True/False).')
@@ -843,17 +840,6 @@ if args.run_msa == "True":
 elif args.run_msa == "False":
     args.run_msa = "Levenshtein"
 
-if args.run_msa == "MAFFT":
-    mafft_path = os.path.join(os.getenv('CONDA_PREFIX'), 'libexec', 'mafft')
-    if not os.path.exists(os.path.join(mafft_path, 'hex2maffttext')):
-        print(f"Mafft binary hex2maffttext not found within the specified folder '{mafft_path}'. Please provide the correct path to mafft binaries with -mp.")
-        sys.exit(1)
-
-    if args.mafft_path != None:
-        mafft_path = args.mafft_path
-    
-    cfg.mafft_path = mafft_path
-
 
 
 title = args.title
@@ -886,6 +872,7 @@ if not os.path.exists(prefix_dir):
     sys.exit(1)
 output_file = os.path.join(prefix_dir, f"{prefix}_result.txt")
 output = os.path.join(prefix_dir, prefix)
+print("Output files prefix: " + output)
 
 cfg.output = output
 
@@ -922,8 +909,6 @@ if run_msa == "POANucleotide":
     malign = POAAlignerNucleotide(cfg)
 elif run_msa == "POAMotif":
     malign = POAAlignerMotif(cfg)
-elif run_msa == "MAFFT":
-    malign = MAFFTAligner(cfg)
 else:
     malign = LevenshteinAligner(cfg, all_seq_dict)
 
