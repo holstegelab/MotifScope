@@ -1,0 +1,20 @@
+name: motifscope
+channels:
+  - conda-forge
+  - bioconda
+  - defaults
+dependencies:
+  - python
+  - numpy==1.26.4
+  - pandas
+  - matplotlib
+  - biopython
+  - multiprocess
+  - umap-learn
+  - scikit-learn
+  - seaborn
+  - levenshtein
+  - ca-certificates
+  - certifi
+  - openssl
+  - scipy=1.13.0

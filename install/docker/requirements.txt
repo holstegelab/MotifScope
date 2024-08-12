@@ -1,0 +1,11 @@
+biopython==1.81
+levenshtein==0.21.1
+matplotlib==3.8.4
+multiprocess==0.70.14
+numpy==1.26.4
+pandas==2.2.1
+scikit-learn==1.4.2
+seaborn==0.13.2
+setuptools==69.2.0
+umap-learn==0.5.3
+pyabpoa
