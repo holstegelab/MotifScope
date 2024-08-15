@@ -45,6 +45,8 @@ motifscope --sequence-type single [-i input.fa] [-mink 2] [-maxk 10] [-o output.
 
 - To characterize motif composition without generating a figure, set ```-figure``` to ```False```. <br>
 
+- To use the reverse complement of input fasta, set ```-reverse``` to ```True```. <br>
+
 ## Output
 - The repeat compositions are output in a fasta file. For example,
 ```bash
@@ -53,4 +55,4 @@ G1 A1 G1 C1 A2 G1 A1 C1 T1 C1 T1 G1 T3 C1 A2 AAAAG12 A1 AAAAG1 C1 A1 T1 G1 T2 C1
 ```
 The motifs are separated by spaces. Each string represents a motif, and the following number indicates how many consecutive copies of that motif occur. <br>
 
-- TThe motif summary per sequence is output in a tab-separated file. The first column is the sequence header, the second column is the motif, the third column is the amount of sequence covered by the motif, and the fourth column is the count of the motif. 
+- The motif summary per sequence is output in a tab-separated file. The first column is the sequence header, the second column is the motif, the third column is the amount of sequence covered by the motif, and the fourth column is the count of the motif. 
