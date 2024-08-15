@@ -593,8 +593,8 @@ def write_compressed_seq(grouped_positions, output):
         for seq in grouped_positions:
             compressed_fasta_file.write(">" + seq + "\n")
             #compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not ma.singlebase else ma.motif for ma in grouped_positions[seq]]) + "\n")
-            compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not f"{ma.singlebase}1" else ma.motif for ma in [seq]]) + "\n")
-
+            #compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not ma.singlebase else for ma in grouped_positions[seq]]) + "\n")
+            compressed_fasta_file.write(" ".join([f"{ma.motif}{ma.count}" if not ma.singlebase else ' '.join([f"{m}1" for m in ma.motif]) for ma in grouped_positions[seq]]) + "\n")
 
 def write_summary(all_motif_seq, output):
     motif_counts = defaultdict(lambda: defaultdict(int))
