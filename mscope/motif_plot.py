@@ -228,7 +228,11 @@ class MotifPlot:
         if self.plot_dendrogram:
             seq_order_list = self._plot_dendrogram(fig, axes)
         else:
-            seq_order_list = numpy.arange(len(self.grouped_motif_seq))
+            #seq_order_list = np.arange(len(self.grouped_motif_seq))
+            seq_order_list = list(self.grouped_motif_seq.keys())
+        #print(self.grouped_motif_seq)
+        #print("\n")
+        #print(seq_order_list)
 
         self._plot_heatmap(fig, axes, seq_order_list)
 
@@ -242,7 +246,7 @@ class MotifPlot:
         plt.savefig(self.figfile, bbox_inches = "tight")
 
     def _prepare_fig(self):        
-        height = min(120, 0.5 * self.nsamples)
+        height = min(120, max(1, 0.5 * self.nsamples))
         #height = 50
         width = min(max(50, 0.015 * self.max_seq_length), 120)
         #width = min(max(50, 0.015 * self.max_seq_length), 50)

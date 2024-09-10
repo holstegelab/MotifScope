@@ -955,7 +955,7 @@ if figure == "True":
 
 
     elif sequence_type == "single":
-        grouped_positions = map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
+        map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
         figfile = output + "_single_read" + f".{args.format}"
         
         print("generating figure")
