@@ -23,9 +23,9 @@ motifscope --sequence-type reads [-i input.fa] [-mink 2] [-maxk 10] [-o output.p
     - The header of the sequences in ```input.fa``` should start with ```>sample_name#read_number#```, for example, ```>HG002#1```. <br>
     <br>
 - For running MotifScope on local assemblies with population data:
-```bash
-motifscope --sequence-type assembly [-i input.fa] [-mink 2] [-maxk 10] [-p population.txt] [-o output.prefix]
-```
+  ```bash
+  motifscope --sequence-type assembly [-i input.fa] [-mink 2] [-maxk 10] [-p population.txt] [-o output.prefix]
+  ```
     - The header of the sequences in ```input.fa``` should start with ```>sample_name#hap_number#```, for example, for HG002, it should either start with ```>HG002#1#``` or ```>HG002#2#```. <br>
     <br>
     - The population file ```population.txt``` should be a tab separated file with the first column being the sample names and the second column being the population. <br>
