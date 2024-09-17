@@ -20,7 +20,7 @@ A tool for motif annotation and visualization in tandem repeats.
   ```bash
   motifscope --sequence-type reads [-i input.fa] [-mink 2] [-maxk 10] [-o output.prefix]
   ```
-    - The header of the sequences in ```input.fa``` should start with ```>sample_name#read_number#```, for example, ```>HG002#1```. <br>
+    - The header of the sequences in ```input.fa``` should start with ```>sample_name#read_number#```, for example, ```>HG002#1#```. <br>
     <br>
 - For running MotifScope on local assemblies with population data:
   ```bash
@@ -36,7 +36,7 @@ A tool for motif annotation and visualization in tandem repeats.
   ```
 <br>
 
-- To run multiple sequence alignment on the compressed representation of the sequence, set ```-msa``` to ```POAMotif``` (recommended, aligns based on motifs) or ```POANuclrotide``` (aligns based on nucleotides). <br>
+- To run multiple sequence alignment on the compressed representation of the sequence, set ```-msa``` to ```POAMotif``` (recommended, aligns based on motifs) or ```POANucleotide``` (aligns based on nucleotides). <br>
 
 - To run the algorithm with a set of known motifs, set ```-g``` to ```True``` and provide the motifs with ```-motifs motifs.txt```. The motif file ```motifs.txt``` should contain the motifs separated with tab. <br>
 
