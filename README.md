@@ -22,11 +22,12 @@ Motifscope is also available online at [https://motifscope.holstegelab.eu](https
   ```
   Docker will create an image called motifscope, in which the necessary dependencies are installed. <br>
 
-  An example command for running motifscope within this docker image is available in run_docker.sh
+  An example command for running motifscope within this docker image is available in run_docker.sh. <br>
+  Please adapt the options in run_docker.sh to your specific use case. <br>
 
-  To run it:
+  To run it (e.g. with example files in Motifscope/example folder):
   ```
-     sh run_docker.sh ../../example/example_sequence.fa ../../example/example_population.txt
+     sh run_docker.sh path/to/example_sequence.fa path/to/example_population.txt output_prefix
   ```
   <br>
   
