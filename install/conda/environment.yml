@@ -4,7 +4,8 @@ channels:
   - bioconda
   - defaults
 dependencies:
-  - python
+  - python>=3.10
+  - pip
   - numpy==1.26.4
   - pandas
   - matplotlib
@@ -17,3 +18,5 @@ dependencies:
   - certifi
   - openssl
   - scipy=1.13.0
+  - pip:
+    - pyabpoa==1.5.3
