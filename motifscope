@@ -16,7 +16,6 @@ from collections import defaultdict
 import umap
 import copy
 
-import seaborn as sns
 import matplotlib
 from matplotlib import pyplot as plt
 from matplotlib.patches import Rectangle
@@ -37,12 +36,15 @@ from mscope.multiseq_align import *
 
 class Config:
     def __init__(self):
+        self.dpi = 100
+
         self.edgecolor = 'black'
         self.linewidth = 0.25
-        self.singlebase_edges=False
+        self.singlebase_edges=True
 
         self.cbar_fontsize = 20
-        self.heatmap_labels_fontsize = 20
+        self.heatmap_labels_xfontsize = 20
+        self.heatmap_labels_yfontsize = 20
         self.title_fontsize = 30
 
         self.args = None
@@ -767,9 +769,7 @@ def map_grouped_score_to_alignment(grouped_motif_seq, X_transform_L2):
 
 
 parser = argparse.ArgumentParser(description='MotifScope')
-parser.add_argument('--sequence-type', dest = 'sequence_type', choices=['assembly', 'reads', 'single'],
-                    help ='Type of input sequences [assembly / reads / single].', type = str, default = 'reads',
-                    required = False)
+
 
 parser.add_argument('-i', '--input', default = None, dest='input_fasta_to_count', required = True, 
                     metavar = "input.fa", type = str,
@@ -791,17 +791,17 @@ parser.add_argument('-t', '--title', default = None, dest='title',
                     help ='Title of the plot, default: None')
 
 parser.add_argument('-msa', '--msa', dest = 'run_msa', type = str, choices=['True', 'False', 'POAMotif', 'POANucleotide', 'Levenshtein'], default = "Levenshtein",
-                    help = 'MSA setting. Either POAMotif, POANucleotide or Levenshtein. For backwars compatibility, True/False can be used, which maps to POANucleotide/Levenshtein. Default: Levenshtein.')
-
-parser.add_argument('-g', dest = 'motif_guided', type = str, choices=['True', 'False'], default = "False",
-                    help = 'Known motif guided motif discovery. Boolean (True/False).')
+                    help = 'MSA setting. Either POAMotif, POANucleotide or Levenshtein. For backwards compatibility, True/False can be used, which maps to POANucleotide/Levenshtein. Default: Levenshtein.')
 
 parser.add_argument('-motif', '--motif', dest = 'ref_motifs', type = str, required = False,
-                    help = 'To use established motifs for analysis by taking a file with known motifs separated by tabs. Required if using known motif guided mode', metavar = 'motifs.txt')
+                    help = 'Use guided motif mode, using established motifs for analysis by taking a file with known motifs separated by tabs.', metavar = 'motifs.txt')
 
-parser.add_argument('-p', '--population', dest = 'population', required = False, 
+parser.add_argument('-p', '--sample_class', dest = 'sample_class', required = False, 
                     metavar = "metadata.txt", type=str,
-                    help = 'Path to a tab separated population metadata file. Required if using "assembly" mode')
+                    help = 'Path to a tab separated file with a column for sequence names and a column for class labels. If provided, an extra column will be added to the output file with the class labels.')
+
+parser.add_argument('-c', '--cluster', dest = 'cluster', type = str, choices=['True', 'False'], default = "True",
+                    help = 'Cluster sequences. Boolean (True/False). Default: True')
 
 parser.add_argument('-prof', '--profile', type = str, dest = 'profile', default = False, choices=['True', 'False'],
                      help = 'Enable profiling (stored in stats.txt)')
@@ -812,8 +812,8 @@ parser.add_argument('-e', '--embed_motif_method', default = 'UMAP', dest= 'embed
 parser.add_argument('-r', '--motif_rank_embed', default = 0.5, dest = 'motif_rank_embed', type = float,
                      help = 'Hold to original embedding (value=0.0) or only preserve order and place motifs equidistant on color map (value=1.0). Default: 0.5')
 
-parser.add_argument('-format', '--format', default = 'png', dest = 'format', choices=['png', 'pdf'],
-                    help = 'Image output format (png, pdf). Default: png')
+parser.add_argument('-format', '--format', default = 'pdf', dest = 'format', choices=['png', 'pdf'],
+                    help = 'Image output format (png, pdf). Default: pdf')
 
 parser.add_argument('-figure', '--figure', default = 'True', type = str, dest = 'figure', choices=['True', 'False'],
                     help = 'Outputs figure. Boolean (True/False). Default: True')
@@ -825,10 +825,6 @@ args, unknown = parser.parse_known_args()
 if unknown:
     parser.error(f"Unknown arguments: {' '.join(unknown)}")
 
-if args.motif_guided == 'True' and not args.ref_motifs:
-    parser.error('-motif is required when -g is "True"')
-if args.sequence_type == 'assembly' and not args.population:
-    parser.error('-p is required when --sequence_type is "assembly"')
 
 
 cfg.args = args
@@ -843,12 +839,11 @@ elif args.run_msa == "False":
 
 
 title = args.title
-sequence_type = args.sequence_type
 input_fasta_to_count = args.input_fasta_to_count
 max_kmer_size = args.max_kmer_size
 min_kmer_size = args.min_kmer_size
 run_msa = args.run_msa
-motif_guided = args.motif_guided
+motif_guided = args.ref_motifs is not None
 ref_motifs = args.ref_motifs
 output_prefix = args.output_prefix
 figure = args.figure
@@ -881,10 +876,9 @@ if reverse == "True":
 
 seq_concat, seq_index, seq_keys = prepare_suffix_string(all_seq_dict)
 
-if motif_guided == "False":
+if not motif_guided:
     candidate_kmer, masked_postion, masked_seq = select_all_kmer(seq_concat, seq_index, min_kmer_size, max_kmer_size)
-    
-elif motif_guided == "True":
+else:
     with open(ref_motifs, 'r') as ref:
         ref_motifs = ref.readlines()
     ref_motifs_list = [i.strip().split("\t") for i in ref_motifs]
@@ -927,41 +921,35 @@ if figure == "True":
     dimension_reduction_result = dimension_reduction_result.sort_values(by = "dimension_reduction")
         
 
+    has_classes = args.sample_class is not None
+    if has_classes:
+        classes_file = args.sample_class
+        #read first line to check if it is a header
+        with open(classes_file, 'r') as f:
+            first_line = f.readline()
+            if first_line.startswith("sample\t"):
+                header = 0
+            else:
+                header = None
 
-    if sequence_type == "assembly":
-        population = args.population
-        population_metadata = pd.read_csv(population, sep = "\t", header = None)
-        population_metadata.columns = ["Sample", "Group"]
+        class_metadata = pd.read_csv(classes_file, sep = "\t", header = header)
+        if header is None:
+            class_metadata.columns = ["sample", "population"]
+
+
+    map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
+
         
+    figfile = output + f".{args.format}"
+    print("generating figure")
+    figure = MotifPlot(cfg, title, figfile)
 
-        map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
-        figfile = output + f".{args.format}"
-        print("generating figure")
-        figure = MotifPlot(cfg, title, figfile)
-        figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
-        figure.enable_dendrogram(all_seq_distance_df)
-        figure.enable_classes(population_metadata)
-        figure.create_figure()
-
-    elif sequence_type == "reads":
-        map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
-        figfile = output + "_reads" + f".{args.format}"
-        print("generating figure")
-        
-        figure = MotifPlot(cfg, title, figfile)
-        figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
-        figure.enable_dendrogram(all_seq_distance_df)
-        figure.create_figure()
-
-
-    elif sequence_type == "single":
-        map_grouped_score_to_alignment(grouped_positions, dimension_reduction_result)
-        figfile = output + "_single_read" + f".{args.format}"
-        
-        print("generating figure")
-        figure = MotifPlot(cfg, title, figfile)
-        figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
-        figure.create_figure()
+    figure.load_data(grouped_positions, sequence_lengths, dimension_reduction_result)
+    if args.cluster == "True":
+       figure.enable_dendrogram(all_seq_distance_df)
+    if has_classes:
+        figure.enable_classes(class_metadata)
+    figure.create_figure()
 
 
 if args.profile:

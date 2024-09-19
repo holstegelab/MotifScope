@@ -12,7 +12,6 @@ dependencies:
   - multiprocess
   - umap-learn
   - scikit-learn
-  - seaborn
   - levenshtein
   - ca-certificates
   - certifi

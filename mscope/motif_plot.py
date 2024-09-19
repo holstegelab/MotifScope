@@ -17,15 +17,14 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     edgecolor = cfg.edgecolor
     linewidth = cfg.linewidth
 
-    '''if cfg.singlebase_edges:
+    #to add singlebase edges, set singlebase_edges to True in the Config section in the 'motifscope' file
+    if cfg.singlebase_edges:
         singlebase_linewidth = linewidth
         singlebase_edgecolor = edgecolor
     else:
         singlebase_linewidth = 0
         singlebase_edgecolor = 'face'
-        '''
-    singlebase_linewidth = linewidth
-    singlebase_edgecolor = edgecolor
+    
 
 
     #handling single bp colors
@@ -139,7 +138,7 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
 
 
 
-def pop_heatmap(cfg, data, poplabels, ax, cbar, cmap):
+def pop_heatmap(cfg, data, poplabels, ax, cbar, cmap, clabel):
     data = np.array(data)
     
     bounds = np.arange(0, len(poplabels) + 1) - 0.5
@@ -157,8 +156,9 @@ def pop_heatmap(cfg, data, poplabels, ax, cbar, cmap):
     ax.set_xlim(0, 1)
     ax.set_ylim(0, len(data))
     ax.set_ylabel("")
-    ax.set_xticks([])
     ax.set_yticks([])
+    ax.set_xticks([0.5])
+    ax.set_xticklabels([clabel],rotation=90,fontsize=cfg.heatmap_labels_xfontsize)
 
 
     cb = plt.colorbar(matplotlib.cm.ScalarMappable(cmap=cmap, norm=norm), cax=cbar, ticks=np.arange(len(poplabels)), spacing='uniform', orientation='vertical')
@@ -202,6 +202,7 @@ class MotifPlot:
         self.cfg = cfg
         self.figtitle = title
         self.figfile = file
+        self.max_classlbl_length = self.max_seqlbl_length = self.max_motif_length = 0
 
     def load_data(self, grouped_motif_seq, sequence_lengths, dim_reduction):
         self.grouped_motif_seq = grouped_motif_seq
@@ -211,16 +212,24 @@ class MotifPlot:
         self.max_seq_length = max(self.sequence_lengths.values())
         self.nsamples = len(grouped_motif_seq)
         self.motif_counts = count_motifs(self.grouped_motif_seq)
+        
+        self.max_seqlbl_length = max([len(e) for e in self._sequence_id_to_label(list(self.grouped_motif_seq.keys()))])
+        self.max_motif_length = max([len(e) for e in self.dim_reduction['motif']])
+
 
     def enable_dendrogram(self, seq_distance_df):
         assert len(self.grouped_motif_seq) == len(seq_distance_df), "Number of sequences in grouped_motif_seq and seq_distance_df should be the same"
         self.plot_dendrogram = True
         self.seq_distance_df = seq_distance_df
 
-    def enable_classes(self, population_df):
+    def enable_classes(self, classes_df):
         self.plot_classes = True
-        self.population_df = population_df
-        self.nclasses = len(population_df['Group'].unique())
+        self.classes_df = classes_df
+        #get name of second column, used as label
+        self.classes_label = classes_df.columns[1]
+        self.max_classlbl_length = max([len(e) for e in classes_df[self.classes_label]])
+       
+        self.nclasses = len(classes_df[self.classes_label].unique())
 
     def create_figure(self):
         fig, axes = self._prepare_fig()
@@ -230,12 +239,8 @@ class MotifPlot:
         else:
             #seq_order_list = np.arange(len(self.grouped_motif_seq))
             seq_order_list = list(self.grouped_motif_seq.keys())
-        #print(self.grouped_motif_seq)
-        #print("\n")
-        #print(seq_order_list)
 
         self._plot_heatmap(fig, axes, seq_order_list)
-
 
         if self.plot_classes:
             self._plot_classes(fig, axes, seq_order_list)
@@ -245,20 +250,92 @@ class MotifPlot:
         sys.stderr.write("Saving figure...\n"); sys.stderr.flush()
         plt.savefig(self.figfile, bbox_inches = "tight")
 
-    def _prepare_fig(self):        
-        height = min(120, max(1, 0.5 * self.nsamples))
-        #height = 50
-        width = min(max(50, 0.015 * self.max_seq_length), 120)
-        #width = min(max(50, 0.015 * self.max_seq_length), 50)
+    def _prepare_fig(self):       
 
-        fig = plt.figure(figsize=(width, height), dpi = 300)
-        width_ratios = [40,10]
+        COLORBAR_TITLE_VSPACE = 0.6
+        CBAR_UNIT = 1.0
+        nsbmotifs = len([x for x in self.motif_counts if x in ["A", "T", "C", "G"]])
+        nmotifs = len(self.motif_counts) - nsbmotifs
+
+        #nmotifs = len(self.motif_counts) - 4 #correct for single base motifs
+        heatmap_height = 0.5 * self.nsamples
+
+        #adapt CBAR_UNIT
+        CBAR_UNIT =  min(1.0, max(0.5, 0.5 * (float(self.nsamples) / nmotifs)))
+
+        #calculate vertical space needed for colorbars if we put them in one column
+        vspace_needed = CBAR_UNIT * len(self.motif_counts) + COLORBAR_TITLE_VSPACE
         if self.plot_classes:
-            width_ratios.insert(0, 0.35)
-        if self.plot_dendrogram:
-            width_ratios.insert(0, 4)
+            vspace_needed += CBAR_UNIT * self.nclasses + COLORBAR_TITLE_VSPACE
 
-        spec = fig.add_gridspec(ncols=len(width_ratios), nrows=1, width_ratios=width_ratios, height_ratios=[1], wspace=0.02)
+
+        #determine if we need two columns for colorbars
+        col_destination = {'motifs':1, 'single_bp':1, 'classes':1} #default: all colorbars in col1
+        if heatmap_height < vspace_needed:
+            ncols = 2
+            #calculate minimum vspace needed for each column
+            if self.plot_classes:
+                vspace_needed1 = max(nmotifs * CBAR_UNIT, CBAR_UNIT * (nsbmotifs + self.nclasses) + COLORBAR_TITLE_VSPACE) #motifs in col1 , single bp and classes in col2
+                vspace_needed2 = max(len(self.motif_counts) * CBAR_UNIT + COLORBAR_TITLE_VSPACE, CBAR_UNIT * self.nclasses) #motifs and single bp in col1, classes in col2
+                if vspace_needed1 < vspace_needed2:
+                    col_destination['single_bp'] = 2
+                col_destination['classes'] = 2
+                vspace_needed = min(vspace_needed1, vspace_needed2)
+            else:
+                vspace_needed = CBAR_UNIT * max(nmotifs, nsbmotifs)
+                col_destination['single_bp'] = 2
+        else:
+            ncols = 1
+            
+        #determine space needed for labels of colorbars
+        lblspace = {'motifs': (self.max_motif_length + 6) * (self.cfg.cbar_fontsize / 72.0), 
+                    'classes': (self.max_classlbl_length + 6) * (self.cfg.cbar_fontsize / 72.0),
+                    'single_bp': (1 + 6) * (self.cfg.cbar_fontsize / 72.0)
+                    }
+        col_lblspace = [0] * ncols
+        for key, value in col_destination.items():
+            col_lblspace[value - 1] = max(col_lblspace[value - 1], lblspace[key])
+
+
+        #determine figure height (max of heatmap height and colorbar height)
+        height = max(heatmap_height, vspace_needed) * 1.2
+       
+       
+        #determine figure width
+        COLORBAR_SPACE = [(1 + c) for c in col_lblspace]
+        CLASSES_SPACE=0.35
+        DENDROGRAM_SPACE=4
+        SEQLBL_SPACE = (self.max_seqlbl_length + 3) * (self.cfg.heatmap_labels_yfontsize / 72.0)
+        width = sum(COLORBAR_SPACE) + max(0.015 * self.max_seq_length, 20)
+        width += SEQLBL_SPACE
+
+        width += CLASSES_SPACE if self.plot_classes else 0
+        width += DENDROGRAM_SPACE if self.plot_dendrogram else 0
+        width = min(width, 120)
+
+       
+        #split up figure in 4 parts: dendrogram, classes, heatmap, colorbar
+        width_ratios = []
+        heatmap_width = width - sum(COLORBAR_SPACE)
+        if self.plot_dendrogram:
+            width_ratios.append(DENDROGRAM_SPACE/width)
+            heatmap_width -= DENDROGRAM_SPACE
+        if self.plot_classes:
+            width_ratios.append(CLASSES_SPACE/width)
+            heatmap_width -= CLASSES_SPACE
+        width_ratios.append(heatmap_width / width)
+        width_ratios.append(SEQLBL_SPACE / width)
+        for c in COLORBAR_SPACE:
+            width_ratios.append(c / width)
+        
+
+        fig = plt.figure(figsize=(width, height), dpi = self.cfg.dpi)
+
+        if heatmap_height < height:
+            #reduce height of heatmap compared to colorbars if needed (many motifs, few sequences), create two rows in that case.
+            spec = fig.add_gridspec(ncols=len(width_ratios), nrows=2, width_ratios=width_ratios, height_ratios=[heatmap_height / height, 1 - heatmap_height / height], wspace=0.02)
+        else:
+            spec = fig.add_gridspec(ncols=len(width_ratios), nrows=1, width_ratios=width_ratios, wspace=0.02)
         
         axes = {}
         cur_pos = 0
@@ -271,47 +348,51 @@ class MotifPlot:
         axes['heatmap'] = fig.add_subplot(spec[0, cur_pos])
 
 
-        #nmotifs = len(self.motif_counts) - 4 #correct for single base motifs
-        nmotifs = len(self.motif_counts) - len([x for x in self.motif_counts if x in ["A", "T", "C", "G"]])
+        colorbar_specs = [spec[:,-(i+1)] for i in range(ncols)][::-1]
 
-        heatmap_pos = axes['heatmap'].get_position()
+        colorbar_xpos = [s.get_position(fig).x0 for s in colorbar_specs]
+
+            
+        colorbar_pos = spec[:,-ncols:].get_position(fig)
+
         #print(heatmap_pos)
         
-        max_height = (heatmap_pos.y1 - heatmap_pos.y0) * height
-        COL1 = heatmap_pos.x1 + 0.07
-        COL2 = COL1 + 0.07
-        sep_dist_colorbar_y = min(1.5 / max_height, 0.05)
+        max_height = (colorbar_pos.y1 - colorbar_pos.y0) * height
+        max_width = (colorbar_specs[0].get_position(fig).x1 - colorbar_specs[-1].get_position(fig).x0) * width
+        colorbar_axes_width = 1.0 / width
 
-        column1_max = column2_max = axes['heatmap'].get_position().y1
-       
-        
+        sep_dist_colorbar_y = COLORBAR_TITLE_VSPACE / max_height
+        column1_max = column2_max = colorbar_pos.y1
+      
         #add color bar for motifs
-        cbar_height = min(1.0 * nmotifs, max_height)
+        cbar_height = min(CBAR_UNIT * nmotifs, max_height)
         #print(cbar_height, height, nmotifs, max_height)
-        axes['cbar_heatmap'] = fig.add_axes([COL1, column1_max  - cbar_height / height, 0.02, cbar_height / height], title="motifs")
-        column1_max = axes['cbar_heatmap'].get_position().y0 - sep_dist_colorbar_y
 
+        
+
+        axes['cbar_heatmap'] = fig.add_axes([colorbar_xpos[0], column1_max  - cbar_height / height, colorbar_axes_width, cbar_height / height], title="motifs")
+        column1_max = axes['cbar_heatmap'].get_position().y0 - sep_dist_colorbar_y
 
         #add color bar for singe bp. 
         #cbar_sb_height = min(1.0 * 4, max_height)
-        cbar_sb_height = min(len([x for x in self.motif_counts if x in ["A", "T", "C", "G"]]) * 4, max_height)
+        cbar_sb_height = min(len([x for x in self.motif_counts if x in ["A", "T", "C", "G"]]) * CBAR_UNIT, max_height)
 
         # see if we can fit the single bp motif colorbar below the motif colorbar
-        if (column1_max  - cbar_sb_height / height) >= heatmap_pos.y0:
-            axes['cbar_single_bp'] = fig.add_axes([COL1, column1_max - cbar_sb_height / height, 0.02, cbar_sb_height / height], title="single bp\nmotifs")
+        if col_destination['single_bp'] == 1:
+            axes['cbar_single_bp'] = fig.add_axes([colorbar_xpos[0], column1_max - cbar_sb_height / height, colorbar_axes_width, cbar_sb_height / height], title="single bp\nmotifs")
             column1_max = axes['cbar_single_bp'].get_position().y0 - sep_dist_colorbar_y
         else:
             #put it next to it.
-            axes['cbar_single_bp'] = fig.add_axes([COL2, column2_max - cbar_sb_height / height, 0.02, cbar_sb_height / height], title="single bp\nmotifs")
+            axes['cbar_single_bp'] = fig.add_axes([colorbar_xpos[1], column2_max - cbar_sb_height / height, colorbar_axes_width, cbar_sb_height / height], title="single bp\nmotifs")
             column2_max = axes['cbar_single_bp'].get_position().y0 - sep_dist_colorbar_y
         
 
         if self.plot_classes:
-            cbar_cls_height = min(1.0 * self.nclasses, max_height)
-            if (column1_max  - cbar_sb_height / height) >= heatmap_pos.y0:
-                axes['cbar_classes'] = fig.add_axes([COL1, column1_max - cbar_cls_height / height, .02, cbar_cls_height / height], title="population")
+            cbar_cls_height = min(CBAR_UNIT * self.nclasses, max_height)
+            if col_destination['classes'] == 1:
+                axes['cbar_classes'] = fig.add_axes([colorbar_xpos[0], column1_max - cbar_cls_height / height, colorbar_axes_width, cbar_cls_height / height], title=self.classes_label)
             else:
-                axes['cbar_classes'] = fig.add_axes([COL2, column2_max - cbar_cls_height / height, .02, cbar_cls_height / height], title="population")
+                axes['cbar_classes'] = fig.add_axes([colorbar_xpos[1], column2_max - cbar_cls_height / height, colorbar_axes_width, cbar_cls_height / height], title=self.classes_label)
 
         return fig, axes
 
@@ -330,7 +411,14 @@ class MotifPlot:
         return [seq.split("#")[0] for seq in seq_order_list]
 
     def _sequence_id_to_label(self, seq_order_list):
-        return [seq.split("#", 2)[0] + "#" + seq.split("#", 2)[1] for seq in seq_order_list]
+        res = []
+        for seq in seq_order_list:
+            parts = seq.split("#")
+            if len(parts) >= 2:
+                res.append(f"{parts[0]}:{parts[1]}")
+            elif len(parts) == 1:
+                res.append(parts[0])
+        return res                
 
     def _plot_heatmap(self, fig, axes, seq_order_list):
         ax = axes['heatmap']
@@ -366,12 +454,12 @@ class MotifPlot:
         xticks_labels = [str(x) for x in xticks_positions]
         ax.tick_params(right=True, left = False, top=False, labelright=True, labelleft=False, labeltop=False, rotation=0)
         ax.set_xticks(xticks_positions + 0.5)
-        ax.set_xticklabels(xticks_labels, rotation=90, fontsize=self.cfg.heatmap_labels_fontsize)
+        ax.set_xticklabels(xticks_labels, rotation=90, fontsize=self.cfg.heatmap_labels_xfontsize)
         ax.tick_params(axis ='x', which ='major')
         
         ax.set_yticks(np.arange(self.nsamples) + 0.5)
-        ax.set_yticklabels(sequences)
-        ax.set_xlabel("Sequence position", fontsize=self.cfg.heatmap_labels_fontsize)
+        ax.set_yticklabels(sequences, fontsize=self.cfg.heatmap_labels_yfontsize)
+        ax.set_xlabel("Sequence position", fontsize=self.cfg.heatmap_labels_xfontsize)
        
         
         #row_index_map = {label: idx for idx, label in enumerate(seq_order_list)}
@@ -385,19 +473,16 @@ class MotifPlot:
         samples = self._sequence_id_to_sample(seq_order_list)
         sequences = self._sequence_id_to_label(seq_order_list)
 
-        group_dict = {sample: group for sample, group in zip(self.population_df['Sample'], self.population_df['Group']) if sample in samples}
-
-        seq_dict = {}
-        for i, (key, value) in enumerate(group_dict.items(), 1):
-            new_key1 = f"{key}#1"
-            new_key2 = f"{key}#2"
-            seq_dict[new_key1] = value
-            seq_dict[new_key2] = value
-
-        unique_groups = sorted(list(set(seq_dict.values())), reverse=True)
-        group_value_dict =  {group: value for group, value in zip(unique_groups, np.arange(len(unique_groups)))}
-
-        groupvalues = [group_value_dict[seq_dict[sample]] for sample in sequences]
+        group_dict = {sample: group for sample, group in zip(self.classes_df[self.classes_df.columns[0]], self.classes_df[self.classes_label]) if sample in samples}
+        grouplabels = []
+        for seq in seq_order_list:
+            sample_id = seq.split('#')[0]
+            if sample_id in group_dict:
+                grouplabels.append(group_dict[sample_id])
+            else:
+                grouplabels.append(np.nan)
+        unique_groups = sorted(list(set(grouplabels)))
+        groupvalues = [unique_groups.index(group) if group in unique_groups else np.nan for group in grouplabels]
 
         if len(unique_groups) <= 10:
             pop_colormap = plt.get_cmap('tab10')
@@ -406,7 +491,7 @@ class MotifPlot:
                 sys.stderr.write(f'WARNING: {len(unique_groups)} groups detected. Population colormap provides only 20 colors. Some groups will have the same color.\n'); sys.stderr.flush()
             pop_colormap = plt.get_cmap('tab20c')
 
-        pop_heatmap(self.cfg, groupvalues, unique_groups, ax, cbaxes, pop_colormap)
+        pop_heatmap(self.cfg, groupvalues, unique_groups, ax, cbaxes, pop_colormap, self.classes_label)
 
 
 

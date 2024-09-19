@@ -32,13 +32,13 @@ RUN ./setup.py build
 # Make it system-wide available
 RUN ./setup.py install
 
-# Clone the TREAT GitHub repository
+# Clone the Motifscope GitHub repository
 # !! You can remove this line, and change it to MotifScope
 RUN git clone https://github.com/holstegelab/MotifScope.git /app/MotifScope
 
 WORKDIR /app/MotifScope
 
-RUN python setup.py install
+RUN python install/docker/setup.py install
 
 # Change working directory to the cloned repository
 # Modify this line -- changing treat to motifscope should work

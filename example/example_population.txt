@@ -1,3 +1,4 @@
+sample	population
 HG002	EUR
 HG01109	AMR
 HG01175	AMR
