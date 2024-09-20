@@ -33,7 +33,6 @@ RUN ./setup.py build
 RUN ./setup.py install
 
 # Clone the Motifscope GitHub repository
-# !! You can remove this line, and change it to MotifScope
 RUN git clone https://github.com/holstegelab/MotifScope.git /app/MotifScope
 
 WORKDIR /app/MotifScope

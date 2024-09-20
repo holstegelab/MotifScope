@@ -9,7 +9,7 @@ packages = find_packages(where=here, include=['mscope', 'mscope.*'])
 
 setup(
     name="MotifScope",
-    version="0.2.0",
+    version="1.0.0",
     packages=packages,
     scripts=[main_script],
     install_requires=[
