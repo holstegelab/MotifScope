@@ -826,7 +826,6 @@ if unknown:
     parser.error(f"Unknown arguments: {' '.join(unknown)}")
 
 
-
 cfg.args = args
 
 #args = parser.parse_args()
@@ -871,6 +870,10 @@ output = os.path.join(prefix_dir, prefix)
 cfg.output = output
 
 all_seq_dict = parse_fasta(input_fasta_to_count)
+if len(all_seq_dict) == 1 and args.cluster == "True" and figure == "True":
+    print(f"Error: Cannot perform clustering for a single sequence.")
+    sys.exit(1)
+
 if reverse == "True":
     all_seq_dict = get_reverse_complements(all_seq_dict)
 
