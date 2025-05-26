@@ -15,8 +15,8 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     assert len(seq_order) == len(sequence_lengths), "Number of sequences in seq_order and sequence_lengths should be the same"
    
     edgecolor = cfg.edgecolor
-    #linewidth = cfg.linewidth
-    linewidth = 0.0001
+    linewidth = cfg.linewidth
+    #linewidth = 0.0001
 
     #to add singlebase edges, set singlebase_edges to True in the Config section in the 'motifscope' file
     if cfg.singlebase_edges:
@@ -46,6 +46,7 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     ]
     if 'N' in single_motifs:
         base_colours.append('yellow')
+    
 
     singlebase_used_cmap = matplotlib.colors.ListedColormap(base_colours)
     #convert_color = {nuc: singlebase_used_cmap(idx) for nuc, idx in motif_to_idx.items()}
@@ -53,7 +54,8 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     #show single value after the decimal point
     sblabels = [
     f"{base} ({motif_counts[base] / float(len(grouped_motif_seq)):.1f})"
-    for base in single_motifs          
+    for base in single_motifs          # keeps A-C-G-T order
+    if base in motif_counts            # skip bases that don’t occur
     ]
     #sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in single_motifs[::-1]]
     if len(sblabels) > 0:
