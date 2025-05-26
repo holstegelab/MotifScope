@@ -15,7 +15,8 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
     assert len(seq_order) == len(sequence_lengths), "Number of sequences in seq_order and sequence_lengths should be the same"
    
     edgecolor = cfg.edgecolor
-    linewidth = cfg.linewidth
+    #linewidth = cfg.linewidth
+    linewidth = 0.0001
 
     #to add singlebase edges, set singlebase_edges to True in the Config section in the 'motifscope' file
     if cfg.singlebase_edges:
@@ -28,26 +29,38 @@ def heatmap(cfg, seq_order, grouped_motif_seq, sequence_lengths, dim_reduction, 
 
 
     #handling single bp colors
-    convert = {'A':0, 'C':0.25, 'G':0.45, 'T':0.65, 'N':1}
     single_motifs = ['A', 'C', 'G', 'T']
     if 'N' in motif_counts:
-        single_motifs.append('N')
-    
+        single_motifs.append('N')                 # keeps the same logic you had
+
     used_single_motifs = [x for x in motif_counts if x in single_motifs]
-    singlebase_cmap = matplotlib.colors.ListedColormap([(q,q,q) for q in [0.35, 0.55, 0.75, 0.9]] + ['yellow'])
-    convert_color = {nuc:singlebase_cmap(score) for nuc, score in convert.items()}
-    for nuc, color in list(convert_color.items()):
-        convert_color[nuc.lower()] = color
-    
-    singlebase_used = {key: convert_color[key] for key in convert_color if key in single_motifs}
-    singlebase_used_cmap = matplotlib.colors.ListedColormap([singlebase_cmap(convert[key]) for key in single_motifs[::-1]])
-   
+    # ── 2. build ONE integer mapping and ONE colormap ─────────────────────────────
+    motif_to_idx = {m:i for i, m in enumerate(single_motifs)}   # A→0, C→1, …
+
+    # greys for A-T, yellow for N – same colours you chose
+    base_colours = [
+        (0.35, 0.35, 0.35),   # A
+        (0.55, 0.55, 0.55),   # C
+        (0.75, 0.75, 0.75),   # G
+        (0.90, 0.90, 0.90)    # T
+    ]
+    if 'N' in single_motifs:
+        base_colours.append('yellow')
+
+    singlebase_used_cmap = matplotlib.colors.ListedColormap(base_colours)
+    #convert_color = {nuc: singlebase_used_cmap(idx) for nuc, idx in motif_to_idx.items()}
+
     #show single value after the decimal point
-    sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in used_single_motifs[::-1]]
+    sblabels = [
+    f"{base} ({motif_counts[base] / float(len(grouped_motif_seq)):.1f})"
+    for base in single_motifs          
+    ]
     #sblabels = [f"{key} ({motif_counts[key] / float(len(grouped_motif_seq)):.1f})" for key in single_motifs[::-1]]
     if len(sblabels) > 0:
         single_bp_color(cfg, sblabels, cbar_sb_ax, singlebase_used_cmap)
 
+    convert_color = {nuc: singlebase_used_cmap(idx) for nuc, idx in motif_to_idx.items()}
+    convert_color.update({nuc.lower(): rgba for nuc, rgba in convert_color.items()})
 
     nmotifs = dim_reduction['motif'].nunique()
     umotifs = dim_reduction['motif'].tolist()
